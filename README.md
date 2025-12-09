@@ -1,7 +1,5 @@
 
 
-View your app in AI Studio: https://ai.studio/apps/drive/1lYirpHLkgu4kbWILn8UYfX6_eqaAwnvK
-
 ## Run Locally
 
 **Prerequisites:**  Node.js
