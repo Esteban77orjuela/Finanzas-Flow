@@ -1,0 +1,433 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Transaction, Category, Account, ViewState, DateFilter, 
+  PeriodType, TransactionType, RecurrenceRule, Frequency 
+} from './types';
+import { generateId, filterTransactions, generateMissingRecurringTransactions } from './utils';
+import Dashboard from './components/Dashboard';
+import TransactionList from './components/TransactionList';
+import TransactionForm from './components/TransactionForm';
+import CategorySettings from './components/CategorySettings';
+import PlanningDocs from './components/PlanningDocs';
+import { 
+  LayoutDashboard, List, Plus, Settings, Moon, Sun, 
+  ChevronLeft, ChevronRight, FileText, CheckCircle
+} from 'lucide-react';
+
+// Default Accounts (You can keep these or make them empty too if you wish)
+const DEFAULT_ACCOUNTS: Account[] = [
+  { id: 'a1', name: 'Efectivo', type: 'CASH', balance: 0 },
+  { id: 'a2', name: 'Nómina', type: 'BANK', balance: 0 },
+];
+
+const App: React.FC = () => {
+  // State
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  // Initialize categories as empty array. User must add them manually.
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
+  const [recurrenceRules, setRecurrenceRules] = useState<RecurrenceRule[]>([]);
+  
+  const [view, setView] = useState<ViewState>('DASHBOARD');
+  const [darkMode, setDarkMode] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  
+  // Date Filtering State
+  const today = new Date();
+  const [dateFilter, setDateFilter] = useState<DateFilter>({
+    month: today.getMonth(),
+    year: today.getFullYear(),
+    period: 'ALL', // ALL, Q1, Q2
+  });
+
+  // Load from LocalStorage
+  useEffect(() => {
+    const savedTx = localStorage.getItem('finanzaFlow_transactions');
+    const savedCats = localStorage.getItem('finanzaFlow_categories');
+    const savedMode = localStorage.getItem('finanzaFlow_darkMode');
+    const savedRules = localStorage.getItem('finanzaFlow_rules');
+    
+    if (savedTx) setTransactions(JSON.parse(savedTx));
+    // If savedCats exists, load it. If not, it remains [] (empty).
+    if (savedCats) setCategories(JSON.parse(savedCats));
+    if (savedRules) setRecurrenceRules(JSON.parse(savedRules));
+    if (savedMode === 'true') {
+      setDarkMode(true);
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  // Save to LocalStorage
+  useEffect(() => {
+    localStorage.setItem('finanzaFlow_transactions', JSON.stringify(transactions));
+  }, [transactions]);
+  
+  useEffect(() => {
+    localStorage.setItem('finanzaFlow_categories', JSON.stringify(categories));
+  }, [categories]);
+  
+  useEffect(() => {
+    localStorage.setItem('finanzaFlow_rules', JSON.stringify(recurrenceRules));
+  }, [recurrenceRules]);
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('finanzaFlow_darkMode', String(darkMode));
+  }, [darkMode]);
+
+  // --- RECURRENCE LOGIC ---
+  
+  // Effect: Whenever month changes or rules change, generate missing transactions for current view
+  useEffect(() => {
+    if (recurrenceRules.length > 0) {
+      const generated = generateMissingRecurringTransactions(
+        recurrenceRules, 
+        transactions, 
+        dateFilter.month, 
+        dateFilter.year
+      );
+      
+      if (generated.length > 0) {
+        setTransactions(prev => [...prev, ...generated]);
+        // console.log("Generated recurring transactions:", generated.length);
+      }
+    }
+  }, [dateFilter.month, dateFilter.year, recurrenceRules]); // Deliberately exclude 'transactions' to avoid loop, we check existence inside 'generate' function
+
+  // Derived Data
+  const filteredTransactions = useMemo(() => 
+    filterTransactions(transactions, dateFilter.month, dateFilter.year, dateFilter.period),
+  [transactions, dateFilter]);
+
+  // Actions
+  
+  const handleSaveTransaction = (
+    t: Transaction, 
+    options?: { 
+      createRule: boolean, 
+      frequency: Frequency, 
+      quincenaN?: 'Q1' | 'Q2',
+      updateFuture: boolean 
+    }
+  ) => {
+    let newTransactions = [...transactions];
+    let newRules = [...recurrenceRules];
+
+    // Case 1: Create New Rule (Strictly for current and future)
+    if (options?.createRule) {
+      const ruleId = generateId();
+      const newRule: RecurrenceRule = {
+        id: ruleId,
+        frequency: options.frequency,
+        quincenaN: options.quincenaN, // Store which quincena this rule belongs to
+        startDate: t.date, // Starts from this transaction date
+        amount: t.amount,
+        type: t.type,
+        categoryId: t.categoryId,
+        accountId: t.accountId,
+        note: t.note || '',
+        baseDateDay: new Date(t.date + 'T00:00:00').getDate()
+      };
+      
+      newRules.push(newRule);
+      
+      // Update transaction to link to rule
+      const txWithRule = { ...t, isRecurring: true, recurrenceRuleId: ruleId };
+      newTransactions = [...newTransactions, txWithRule];
+    }
+    // Case 2: Update existing transaction (Edit)
+    else if (editingTransaction) {
+      // 2a. Update Future: Stop old rule, Create new rule, Update current instance
+      if (options?.updateFuture && t.recurrenceRuleId) {
+        const oldRuleIndex = newRules.findIndex(r => r.id === t.recurrenceRuleId);
+        
+        if (oldRuleIndex >= 0) {
+          // "Archive" old rule by setting End Date to yesterday
+          // This ensures history remains untouched
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          newRules[oldRuleIndex] = {
+            ...newRules[oldRuleIndex],
+            endDate: yesterday.toISOString().split('T')[0]
+          };
+
+          // Create New Rule starting Today/TxDate
+          const newRuleId = generateId();
+          const newRule: RecurrenceRule = {
+            id: newRuleId,
+            frequency: options.frequency || 'MONTHLY',
+            quincenaN: options.quincenaN,
+            startDate: t.date,
+            amount: t.amount,
+            type: t.type,
+            categoryId: t.categoryId,
+            accountId: t.accountId,
+            note: t.note || '',
+            baseDateDay: new Date(t.date + 'T00:00:00').getDate()
+          };
+          newRules.push(newRule);
+
+          // Update current transaction to be the "First" of the new rule
+          const updatedTx = { ...t, recurrenceRuleId: newRuleId };
+          newTransactions = newTransactions.map(item => item.id === t.id ? updatedTx : item);
+        }
+      } 
+      // 2b. Edit Only This Instance (Detach or just keep as modified instance)
+      else {
+        // Just update the transaction values. 
+        // If date changed, we strictly detach to prevent ghost recreation of the original date by the rule.
+        const dateChanged = editingTransaction.date !== t.date;
+        const updatedTx = { 
+          ...t, 
+          recurrenceRuleId: dateChanged ? undefined : t.recurrenceRuleId,
+          isRecurring: dateChanged ? false : t.isRecurring 
+        };
+        
+        newTransactions = newTransactions.map(item => item.id === t.id ? updatedTx : item);
+      }
+    }
+    // Case 3: Simple Add (Non-recurring)
+    else {
+      newTransactions = [...newTransactions, t];
+    }
+
+    setRecurrenceRules(newRules);
+    setTransactions(newTransactions);
+    setEditingTransaction(null);
+  };
+
+  const handleDeleteTransaction = (id: string) => {
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) return;
+
+    let confirmMsg = '¿Eliminar esta transacción?';
+    if (tx.isRecurring && tx.recurrenceRuleId) {
+      confirmMsg = 'Esta es una transacción recurrente.';
+    }
+
+    if (confirm(confirmMsg)) {
+      if (tx.isRecurring && tx.recurrenceRuleId) {
+         const stopFuture = confirm('¿Deseas detener también los futuros pagos de esta recurrencia? (El historial se mantendrá intacto)');
+         if (stopFuture) {
+           // Stop the rule
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            setRecurrenceRules(prev => prev.map(r => 
+              r.id === tx.recurrenceRuleId 
+              ? { ...r, endDate: yesterday.toISOString().split('T')[0] } 
+              : r
+            ));
+         }
+      }
+      setTransactions(prev => prev.filter(t => t.id !== id));
+    }
+  };
+
+  const handleEditClick = (t: Transaction) => {
+    setEditingTransaction(t);
+    setIsModalOpen(true);
+  };
+  
+  const handleAddCategory = (category: Category) => {
+    setCategories(prev => [...prev, category]);
+  };
+  
+  const handleDeleteCategory = (id: string) => {
+    if (confirm('¿Seguro que deseas eliminar esta categoría?')) {
+      setCategories(prev => prev.filter(c => c.id !== id));
+    }
+  };
+
+  const changeMonth = (delta: number) => {
+    let newMonth = dateFilter.month + delta;
+    let newYear = dateFilter.year;
+
+    if (newMonth > 11) {
+      newMonth = 0;
+      newYear++;
+    } else if (newMonth < 0) {
+      newMonth = 11;
+      newYear--;
+    }
+    setDateFilter(prev => ({ ...prev, month: newMonth, year: newYear }));
+  };
+
+  const monthName = new Date(dateFilter.year, dateFilter.month).toLocaleString('es-MX', { month: 'long', year: 'numeric' });
+
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
+      
+      {/* Top Navigation Bar */}
+      <header className="fixed top-0 w-full z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold">
+              F
+            </div>
+            <span className="font-bold text-xl tracking-tight hidden sm:block">FinanzaFlow</span>
+          </div>
+
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+            <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="px-3 text-sm font-medium capitalize w-32 text-center select-none">{monthName}</span>
+             <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          <button 
+            onClick={() => setDarkMode(!darkMode)}
+            className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
+          >
+            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-5xl mx-auto px-4 pt-24 pb-24">
+        
+        {/* Period Filter Tabs */}
+        {(view === 'DASHBOARD' || view === 'TRANSACTIONS') && (
+           <div className="flex justify-center mb-8">
+            <div className="bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 inline-flex">
+              <button 
+                onClick={() => setDateFilter(prev => ({...prev, period: PeriodType.Q1}))}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q1 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              >
+                1ª Quincena
+              </button>
+              <button 
+                onClick={() => setDateFilter(prev => ({...prev, period: PeriodType.Q2}))}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q2 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              >
+                2ª Quincena
+              </button>
+               <button 
+                onClick={() => setDateFilter(prev => ({...prev, period: 'ALL'}))}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter.period === 'ALL' ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+              >
+                Mes Completo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Dynamic Views */}
+        {view === 'DASHBOARD' && (
+          <>
+            <Dashboard 
+              transactions={filteredTransactions} 
+              categories={categories}
+              filter={dateFilter}
+            />
+          </>
+        )}
+
+        {view === 'TRANSACTIONS' && (
+          <div className="animate-fade-in">
+             <div className="flex justify-between items-center mb-6">
+               <h2 className="text-xl font-bold">Movimientos</h2>
+               <span className="text-sm text-slate-500">{filteredTransactions.length} registros</span>
+             </div>
+             <TransactionList 
+              transactions={filteredTransactions}
+              categories={categories}
+              onEdit={handleEditClick}
+              onDelete={handleDeleteTransaction}
+            />
+          </div>
+        )}
+        
+        {view === 'PLANNING' && <PlanningDocs />}
+
+        {view === 'SETTINGS' && (
+          <div className="animate-fade-in pb-20">
+             <CategorySettings 
+               categories={categories}
+               onAdd={handleAddCategory}
+               onDelete={handleDeleteCategory}
+             />
+          </div>
+        )}
+
+      </main>
+
+      {/* Floating Action Button (FAB) */}
+      <button
+        onClick={() => {
+          setEditingTransaction(null);
+          // If no categories exist, warn user or redirect? 
+          // For now, modal will open but dropdown will be empty. 
+          // Ideally user sees empty dashboard and goes to Settings.
+          if (categories.length === 0) {
+             if(confirm("No tienes categorías creadas. ¿Ir a Ajustes para crear una?")) {
+               setView('SETTINGS');
+             }
+             return;
+          }
+          setIsModalOpen(true);
+        }}
+        className="fixed bottom-24 right-6 md:right-12 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg shadow-primary-600/40 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 z-40"
+      >
+        <Plus size={28} />
+      </button>
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 h-16 pb-safe z-40">
+        <div className="grid grid-cols-4 h-full max-w-lg mx-auto">
+          <button 
+            onClick={() => setView('DASHBOARD')}
+            className={`flex flex-col items-center justify-center gap-1 ${view === 'DASHBOARD' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <LayoutDashboard size={20} />
+            <span className="text-[10px] font-medium">Inicio</span>
+          </button>
+          
+          <button 
+            onClick={() => setView('TRANSACTIONS')}
+            className={`flex flex-col items-center justify-center gap-1 ${view === 'TRANSACTIONS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <List size={20} />
+            <span className="text-[10px] font-medium">Historial</span>
+          </button>
+
+           <button 
+            onClick={() => setView('PLANNING')}
+            className={`flex flex-col items-center justify-center gap-1 ${view === 'PLANNING' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <FileText size={20} />
+            <span className="text-[10px] font-medium">Docs</span>
+          </button>
+          
+          <button 
+            onClick={() => setView('SETTINGS')}
+            className={`flex flex-col items-center justify-center gap-1 ${view === 'SETTINGS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <Settings size={20} />
+            <span className="text-[10px] font-medium">Ajustes</span>
+          </button>
+        </div>
+      </nav>
+
+      {/* Modals */}
+      <TransactionForm 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSaveTransaction}
+        categories={categories}
+        accounts={accounts}
+        initialData={editingTransaction}
+      />
+    </div>
+  );
+};
+
+export default App;
