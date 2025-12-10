@@ -1,0 +1,5 @@
+{
+  "name": "FinanzaFlow",
+  "description": "Aplicación de finanzas personales minimalista con gestión de quincenas, transacciones recurrentes y análisis visual.",
+  "requestFramePermissions": []
+}
