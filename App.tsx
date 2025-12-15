@@ -9,6 +9,7 @@ import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
 import CategorySettings from './components/CategorySettings';
 import PlanningDocs from './components/PlanningDocs';
+import FloatingCalculator from './components/FloatingCalculator';
 import { 
   LayoutDashboard, List, Plus, Settings, Moon, Sun, 
   ChevronLeft, ChevronRight, FileText
@@ -498,6 +499,7 @@ const App: React.FC = () => {
         accounts={accounts}
         initialData={editingTransaction}
       />
+      <FloatingCalculator />
     </div>
   );
 };
