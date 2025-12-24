@@ -34,7 +34,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, categor
         const isIncome = t.type === TransactionType.INCOME;
         
         return (
-          <div key={t.id} className="group flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-all">
+          <div key={t.id} className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-all">
             <div className="flex items-center gap-4">
               <div 
                 className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow-sm
@@ -67,11 +67,11 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, categor
                 {isIncome ? '+' : '-'}{formatCurrency(t.amount)}
               </span>
               
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => onEdit(t)} className="p-2 text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+              <div className="flex gap-1 opacity-100 transition-opacity">
+                <button onClick={(e) => { e.stopPropagation(); console.log('Edit clicked:', t); onEdit(t); }} className="p-2 text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
                   <Edit2 size={16} />
                 </button>
-                <button onClick={() => onDelete(t.id)} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                <button onClick={(e) => { e.stopPropagation(); console.log('Delete clicked:', t.id); onDelete(t.id); }} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
                   <Trash2 size={16} />
                 </button>
               </div>

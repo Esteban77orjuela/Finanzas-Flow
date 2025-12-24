@@ -214,7 +214,7 @@ const FloatingCalculator: React.FC = () => {
   ]), [evaluateResult, handleOperator, inputDecimal, inputDigit, removeLast, resetAll]);
 
   return (
-    <div className="fixed bottom-44 right-6 md:right-12 z-[70] flex flex-col items-end gap-3">
+    <div className="fixed bottom-44 right-6 md:right-12 z-[70] flex flex-col items-end gap-3 pointer-events-none">
       <div
         className={[
           'w-[min(calc(100vw-2rem),18rem)] sm:w-72 rounded-2xl border backdrop-blur-lg shadow-xl transition-all duration-200 ease-out origin-bottom-right',
@@ -263,7 +263,7 @@ const FloatingCalculator: React.FC = () => {
       <button
         type="button"
         onClick={() => setIsOpen(prev => !prev)}
-        className="w-14 h-14 rounded-full bg-primary-600 hover:bg-primary-500 text-white shadow-lg shadow-primary-500/30 flex items-center justify-center transition-transform duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary-400"
+        className="w-14 h-14 rounded-full bg-primary-600 hover:bg-primary-500 text-white shadow-lg shadow-primary-500/30 flex items-center justify-center transition-transform duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary-400 pointer-events-auto"
         aria-label={isOpen ? 'Cerrar calculadora' : 'Abrir calculadora'}
       >
         {isOpen ? <X size={24} /> : <Calculator size={24} />}

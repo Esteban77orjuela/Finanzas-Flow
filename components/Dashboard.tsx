@@ -1,23 +1,44 @@
 import React, { useMemo } from 'react';
 import { Transaction, TransactionType, Category, DateFilter } from '../types';
 import { calculateTotals, formatCurrency } from '../utils';
-import { ArrowUpCircle, ArrowDownCircle, Wallet, CalendarClock, Receipt, ArrowRight } from 'lucide-react';
+import {
+  ArrowUpCircle, ArrowDownCircle, Wallet, CalendarClock,
+  Receipt, ArrowRight, Edit2, Trash2
+} from 'lucide-react';
 
 interface DashboardProps {
   transactions: Transaction[];
   categories: Category[];
   filter: DateFilter;
+  onEdit: (t: Transaction) => void;
+  onDelete: (id: string) => void;
 }
 
-const TransactionRow = ({ t, category }: { t: Transaction; category?: Category }) => {
+interface TransactionRowProps {
+  t: Transaction;
+  category?: Category;
+  onEdit: (t: Transaction) => void;
+  onDelete: (id: string) => void;
+}
+
+const TransactionRow: React.FC<TransactionRowProps> = ({
+  t,
+  category,
+  onEdit,
+  onDelete
+}) => {
   const isIncome = t.type === TransactionType.INCOME;
   const dateObj = new Date(t.date + 'T00:00:00');
 
   return (
-    <div className="flex items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors group">
-      <div className="flex items-center gap-3">
+    <div
+      className="relative flex items-center p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors group min-h-[4rem]"
+      onClick={() => console.log('TransactionRow row clicked:', t.id)}
+    >
+      {/* Información Principal (Izquierda) - Con padding derecho para no chocar con acciones */}
+      <div className="flex items-center gap-3 pr-[140px] flex-1 min-w-0">
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center text-sm shadow-sm opacity-90"
+          className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-sm shadow-sm opacity-90"
           style={{
             backgroundColor: category?.color ? `${category.color}15` : '#f1f5f9',
             color: category?.color || '#64748b'
@@ -25,25 +46,56 @@ const TransactionRow = ({ t, category }: { t: Transaction; category?: Category }
         >
           {category?.name.charAt(0).toUpperCase() || '?'}
         </div>
-        <div>
-          <p className="font-medium text-sm text-slate-800 dark:text-slate-200">
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">
             {category?.name || 'Sin Categoría'}
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
             {dateObj.getDate()} {dateObj.toLocaleString('es-MX', { month: 'short' })} {t.note && `• ${t.note}`}
           </p>
         </div>
       </div>
-      <div className="text-right">
-        <span className={`font-semibold text-sm block ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>
+
+      {/* Acciones y Monto (Derecha) - Posicionados Absolutamente para evitar bloqueos */}
+      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-end gap-3 z-50">
+        <span className={`font-semibold text-sm whitespace-nowrap ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>
           {isIncome ? '+' : '-'}{formatCurrency(t.amount)}
         </span>
+
+        <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+          <button
+            type="button"
+            onClick={(e) => {
+              console.log('Dashboard ACTION (Abs): Edit clicked', t.id);
+              e.preventDefault();
+              e.stopPropagation();
+              onEdit(t);
+            }}
+            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full transition-all cursor-pointer z-50"
+            title="Editar"
+          >
+            <Edit2 size={18} className="pointer-events-none" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              console.log('Dashboard ACTION (Abs): Delete clicked', t.id);
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(t.id);
+            }}
+            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-full transition-all cursor-pointer z-50"
+            title="Eliminar"
+          >
+            <Trash2 size={18} className="pointer-events-none" />
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter }) => {
+const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter, onEdit, onDelete }) => {
   const { income, expense, balance } = useMemo(() => calculateTotals(transactions), [transactions]);
 
   // Split transactions into Fixed (Recurring) and Variable (Normal)
@@ -134,10 +186,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter 
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto max-h-[400px] p-2 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto max-h-[400px] p-2 pr-3 custom-scrollbar relative z-0">
             {fixedTransactions.length > 0 ? (
               <div className="space-y-1">
-                {fixedTransactions.map(t => <TransactionRow key={t.id} t={t} category={getCategory(t.categoryId)} />)}
+                {fixedTransactions.map(t => (
+                  <TransactionRow
+                    key={t.id}
+                    t={t}
+                    category={getCategory(t.categoryId)}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                ))}
               </div>
             ) : (
               <div className="h-32 flex flex-col items-center justify-center text-slate-400 text-sm italic">
@@ -171,10 +231,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter 
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto max-h-[400px] p-2 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto max-h-[400px] p-2 pr-3 custom-scrollbar relative z-0">
             {variableTransactions.length > 0 ? (
               <div className="space-y-1">
-                {variableTransactions.map(t => <TransactionRow key={t.id} t={t} category={getCategory(t.categoryId)} />)}
+                {variableTransactions.map(t => (
+                  <TransactionRow
+                    key={t.id}
+                    t={t}
+                    category={getCategory(t.categoryId)}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                  />
+                ))}
               </div>
             ) : (
               <div className="h-32 flex flex-col items-center justify-center text-slate-400 text-sm italic">

@@ -57,7 +57,8 @@ export const generateMissingRecurringTransactions = (
   rules: RecurrenceRule[],
   existingTransactions: Transaction[],
   targetMonth: number,
-  targetYear: number
+  targetYear: number,
+  recurrenceExceptions: { ruleId: string; date: string }[] = []
 ): Transaction[] => {
   const newTransactions: Transaction[] = [];
   const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
@@ -103,7 +104,11 @@ export const generateMissingRecurringTransactions = (
         t.date === dateStr
       );
 
-      if (!exists) {
+      const isException = recurrenceExceptions.some(e =>
+        e.ruleId === rule.id && e.date === dateStr
+      );
+
+      if (!exists && !isException) {
         newTransactions.push({
           id: generateId(),
           amount: rule.amount,
