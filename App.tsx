@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import {
   Transaction,
   Category,
@@ -17,6 +18,7 @@ import TransactionForm from './components/TransactionForm';
 import CategorySettings from './components/CategorySettings';
 import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
+import AuthPage from './components/AuthPage';
 import {
   LayoutDashboard,
   List,
@@ -27,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  LogOut,
 } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
 import RecurringDeleteModal from './components/RecurringDeleteModal';
@@ -129,6 +132,41 @@ const getInitialDarkMode = (): boolean => {
 };
 
 const App: React.FC = () => {
+  // Auth State
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Listen for auth changes
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+
+    // Listen for changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    // Clear local storage on logout
+    Object.values(STORAGE_KEYS).forEach((key) => {
+      if (isBrowser) window.localStorage.removeItem(key);
+    });
+    setTransactions([]);
+    setCategories([]);
+    setAccounts(DEFAULT_ACCOUNTS);
+    setRecurrenceRules([]);
+    setRecurrenceExceptions([]);
+  };
+
   // State
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -159,6 +197,7 @@ const App: React.FC = () => {
 
   // --- INITIAL DATA FETCH & MIGRATION ---
   useEffect(() => {
+    if (!session) return; // Don't fetch data if not logged in
     const initData = async () => {
       setIsLoading(true);
       try {
@@ -314,7 +353,7 @@ const App: React.FC = () => {
     };
 
     initData();
-  }, []);
+  }, [session]);
 
   // --- PERSISTENCE: Save to BOTH for extra safety ---
   useEffect(() => {
@@ -749,6 +788,20 @@ const App: React.FC = () => {
     );
   }
 
+  // --- AUTH GATE ---
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
+        <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-slate-400 font-medium">Cargando...</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthPage />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
       {/* Top Navigation Bar */}
@@ -779,12 +832,21 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
-          >
-            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
+            >
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors"
+              title="Cerrar sesión"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
         </div>
       </header>
 
