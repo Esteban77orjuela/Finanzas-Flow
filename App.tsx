@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
 import RecurringDeleteModal from './components/RecurringDeleteModal';
+import { supabase } from './supabaseClient';
+import { AlertCircle } from 'lucide-react';
 
 // Default Accounts (You can keep these or make them empty too if you wish)
 const DEFAULT_ACCOUNTS: Account[] = [
@@ -128,22 +130,13 @@ const getInitialDarkMode = (): boolean => {
 
 const App: React.FC = () => {
   // State
-  const [transactions, setTransactions] = useState<Transaction[]>(
-    () => readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) ?? []
-  );
-  // Initialize categories as empty array. User must add them manually.
-  const [categories, setCategories] = useState<Category[]>(
-    () => readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) ?? []
-  );
-  const [accounts, setAccounts] = useState<Account[]>(
-    () => readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) ?? DEFAULT_ACCOUNTS
-  );
-  const [recurrenceRules, setRecurrenceRules] = useState<RecurrenceRule[]>(
-    () => readStorage<RecurrenceRule[]>(STORAGE_KEYS.RULES) ?? []
-  );
-  const [recurrenceExceptions, setRecurrenceExceptions] = useState<RecurrenceException[]>(
-    () => readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) ?? []
-  );
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
+  const [recurrenceRules, setRecurrenceRules] = useState<RecurrenceRule[]>([]);
+  const [recurrenceExceptions, setRecurrenceExceptions] = useState<RecurrenceException[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const [view, setView] = useState<ViewState>(getInitialView);
   const [darkMode, setDarkMode] = useState<boolean>(getInitialDarkMode);
@@ -164,26 +157,185 @@ const App: React.FC = () => {
   // Date Filtering State
   const [dateFilter, setDateFilter] = useState<DateFilter>(getInitialDateFilter);
 
-  // Save to LocalStorage
+  // --- INITIAL DATA FETCH & MIGRATION ---
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.TRANSACTIONS, transactions);
-  }, [transactions]);
+    const initData = async () => {
+      setIsLoading(true);
+      try {
+        // 1. Fetch current data from Supabase
+        const [catRes, rulesRes, transRes, accRes] = await Promise.all([
+          supabase.from('categories').select('*'),
+          supabase.from('recurrence_rules').select('*'),
+          supabase.from('transactions').select('*'),
+          supabase.from('accounts').select('*'),
+        ]);
+
+        if (catRes.error) throw new Error(`Error en categorías: ${catRes.error.message}`);
+        if (rulesRes.error) throw new Error(`Error en reglas: ${rulesRes.error.message}`);
+        if (transRes.error) throw new Error(`Error en transacciones: ${transRes.error.message}`);
+        if (accRes.error) throw new Error(`Error en cuentas: ${accRes.error.message}`);
+
+        const mappedCategories: Category[] = (catRes.data || []).map((c) => ({
+          id: c.id,
+          name: c.name,
+          type: c.type,
+          color: c.color,
+          icon: c.icon,
+        }));
+
+        const mappedRules: RecurrenceRule[] = (rulesRes.data || []).map((r) => ({
+          id: r.id,
+          frequency: r.frequency,
+          quincenaN: r.quincena_n,
+          startDate: r.start_date,
+          endDate: r.end_date,
+          amount: parseFloat(r.amount),
+          type: r.type,
+          categoryId: r.category_id,
+          accountId: r.account_id,
+          note: r.note,
+          baseDateDay: r.base_date_day,
+        }));
+
+        const mappedTransactions: Transaction[] = (transRes.data || []).map((t) => ({
+          id: t.id,
+          amount: parseFloat(t.amount),
+          type: t.type,
+          date: t.date,
+          categoryId: t.category_id,
+          accountId: t.account_id,
+          note: t.note,
+          isRecurring: t.is_recurring,
+          recurrenceRuleId: t.recurrence_rule_id,
+        }));
+
+        const mappedAccounts: Account[] = (accRes.data || []).map((a) => ({
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          balance: parseFloat(a.balance),
+        }));
+
+        // 2. INDIVIDUAL MIGRATION (Check each table independently)
+        const localTrans = readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
+        const localCats = readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || [];
+        const localRules = readStorage<RecurrenceRule[]>(STORAGE_KEYS.RULES) || [];
+        const localAccs = readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS;
+
+        let finalCats = mappedCategories;
+        let finalAccs = mappedAccounts;
+        let finalRules = mappedRules;
+        let finalTrans = mappedTransactions;
+
+        // Migrar Categorías si están vacías en Supabase
+        if (mappedCategories.length === 0 && localCats.length > 0) {
+          console.warn('[FinanzaFlow] Migrando categorías locales...');
+          await supabase.from('categories').insert(
+            localCats.map((c) => ({
+              id: c.id,
+              name: c.name,
+              type: c.type,
+              color: c.color,
+              icon: c.icon,
+            }))
+          );
+          finalCats = localCats;
+        }
+
+        // Migrar Cuentas si están vacías en Supabase (O subir DEFAULT_ACCOUNTS)
+        if (mappedAccounts.length === 0) {
+          console.warn('[FinanzaFlow] Migrando cuentas locales...');
+          await supabase.from('accounts').insert(
+            localAccs.map((a) => ({
+              id: a.id,
+              name: a.name,
+              type: a.type,
+              balance: a.balance,
+            }))
+          );
+          finalAccs = localAccs;
+        }
+
+        // Migrar Reglas si están vacías en Supabase
+        if (mappedRules.length === 0 && localRules.length > 0) {
+          console.warn('[FinanzaFlow] Migrando reglas locales...');
+          await supabase.from('recurrence_rules').insert(
+            localRules.map((r) => ({
+              id: r.id,
+              frequency: r.frequency,
+              quincena_n: r.quincenaN,
+              start_date: r.startDate,
+              end_date: r.endDate,
+              amount: r.amount,
+              type: r.type,
+              category_id: r.categoryId,
+              account_id: r.accountId,
+              note: r.note,
+              base_date_day: r.baseDateDay,
+            }))
+          );
+          finalRules = localRules;
+        }
+
+        // Migrar Transacciones si están vacías en Supabase
+        if (mappedTransactions.length === 0 && localTrans.length > 0) {
+          console.warn('[FinanzaFlow] Migrando transacciones locales...');
+          await supabase.from('transactions').insert(
+            localTrans.map((t) => ({
+              id: t.id,
+              amount: t.amount,
+              type: t.type,
+              date: t.date,
+              category_id: t.categoryId,
+              account_id: t.accountId,
+              note: t.note,
+              is_recurring: t.isRecurring,
+              recurrence_rule_id: t.recurrenceRuleId,
+            }))
+          );
+          finalTrans = localTrans;
+        }
+
+        // 3. SET FINAL STATES
+        setCategories(finalCats);
+        setAccounts(finalAccs);
+        setRecurrenceRules(finalRules);
+        setTransactions(finalTrans);
+      } catch (err: any) {
+        console.error('Error inicializando Supabase:', err);
+        setInitError(err.message);
+        // Fallback to local
+        setTransactions(readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || []);
+        setCategories(readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || []);
+        setAccounts(readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initData();
+  }, []);
+
+  // --- PERSISTENCE: Save to BOTH for extra safety ---
+  useEffect(() => {
+    if (!isLoading) writeStorage(STORAGE_KEYS.TRANSACTIONS, transactions);
+  }, [transactions, isLoading]);
 
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.CATEGORIES, categories);
-  }, [categories]);
+    if (!isLoading) writeStorage(STORAGE_KEYS.CATEGORIES, categories);
+  }, [categories, isLoading]);
 
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.RULES, recurrenceRules);
-  }, [recurrenceRules]);
+    if (!isLoading) writeStorage(STORAGE_KEYS.RULES, recurrenceRules);
+  }, [recurrenceRules, isLoading]);
 
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.RECURRENCE_EXCEPTIONS, recurrenceExceptions);
-  }, [recurrenceExceptions]);
+    if (!isLoading) writeStorage(STORAGE_KEYS.RECURRENCE_EXCEPTIONS, recurrenceExceptions);
+  }, [recurrenceExceptions, isLoading]);
 
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.ACCOUNTS, accounts);
-  }, [accounts]);
+    if (!isLoading) writeStorage(STORAGE_KEYS.ACCOUNTS, accounts);
+  }, [accounts, isLoading]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.VIEW, view);
@@ -219,10 +371,28 @@ const App: React.FC = () => {
 
       if (generated.length > 0) {
         setTransactions((prev) => [...prev, ...generated]);
-        // console.log("Generated recurring transactions:", generated.length);
+
+        // SYNC auto-generated recurring transactions to Supabase
+        const syncGenerated = async () => {
+          for (const tx of generated) {
+            const { error } = await supabase.from('transactions').upsert({
+              id: tx.id,
+              amount: tx.amount,
+              type: tx.type,
+              date: tx.date,
+              category_id: tx.categoryId,
+              account_id: tx.accountId,
+              note: tx.note,
+              is_recurring: tx.isRecurring,
+              recurrence_rule_id: tx.recurrenceRuleId,
+            });
+            if (error) console.error('[Supabase] Error sincronizando tx recurrente:', error);
+          }
+        };
+        syncGenerated();
       }
     }
-  }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions]); // Deliberately exclude 'transactions' to avoid loop, we check existence inside 'generate' function
+  }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions]);
 
   // Derived Data
   const filteredTransactions = useMemo(
@@ -238,7 +408,7 @@ const App: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSaveTransaction = (
+  const handleSaveTransaction = async (
     t: Transaction,
     options?: {
       createRule: boolean;
@@ -250,6 +420,8 @@ const App: React.FC = () => {
     try {
       let newTransactions = [...transactions];
       const newRules = [...recurrenceRules];
+      const transactionsToSync: Transaction[] = [];
+      const rulesToSync: RecurrenceRule[] = [];
 
       if (options?.createRule) {
         const ruleId = generateId();
@@ -265,8 +437,8 @@ const App: React.FC = () => {
           note: t.note || '',
           baseDateDay: new Date(t.date + 'T00:00:00').getDate(),
         };
-
         newRules.push(newRule);
+        rulesToSync.push(newRule);
 
         const txWithRule: Transaction = {
           ...t,
@@ -282,6 +454,7 @@ const App: React.FC = () => {
         } else {
           newTransactions = [...newTransactions, txWithRule];
         }
+        transactionsToSync.push(txWithRule);
       } else if (editingTransaction) {
         if (options?.updateFuture && editingTransaction.recurrenceRuleId) {
           const oldRuleIndex = newRules.findIndex(
@@ -293,10 +466,12 @@ const App: React.FC = () => {
             const prevDay = new Date(editedDate);
             prevDay.setDate(prevDay.getDate() - 1);
 
-            newRules[oldRuleIndex] = {
+            const updatedOldRule = {
               ...newRules[oldRuleIndex],
               endDate: prevDay.toISOString().split('T')[0],
             };
+            newRules[oldRuleIndex] = updatedOldRule;
+            rulesToSync.push(updatedOldRule);
 
             const newRuleId = generateId();
             const newRule: RecurrenceRule = {
@@ -312,6 +487,7 @@ const App: React.FC = () => {
               baseDateDay: new Date(t.date + 'T00:00:00').getDate(),
             };
             newRules.push(newRule);
+            rulesToSync.push(newRule);
 
             const updatedTx: Transaction = {
               ...t,
@@ -323,6 +499,7 @@ const App: React.FC = () => {
             newTransactions = newTransactions.map((item) =>
               item.id === editingTransaction.id ? updatedTx : item
             );
+            transactionsToSync.push(updatedTx);
           }
         } else {
           if (editingTransaction.isRecurring) {
@@ -333,6 +510,7 @@ const App: React.FC = () => {
               recurrenceRuleId: undefined,
             };
             newTransactions = [...newTransactions, detachedTx];
+            transactionsToSync.push(detachedTx);
           } else {
             const updatedTx: Transaction = {
               ...t,
@@ -341,40 +519,126 @@ const App: React.FC = () => {
             newTransactions = newTransactions.map((item) =>
               item.id === editingTransaction.id ? updatedTx : item
             );
+            transactionsToSync.push(updatedTx);
           }
         }
       } else {
-        newTransactions = [...newTransactions, { ...t, id: generateId() }];
+        const newTx = { ...t, id: generateId() };
+        newTransactions = [...newTransactions, newTx];
+        transactionsToSync.push(newTx);
       }
 
       setRecurrenceRules(newRules);
       setTransactions(newTransactions);
       setEditingTransaction(null);
       setIsModalOpen(false);
+
+      // --- SUPABASE SYNC (ALL pending items) ---
+      for (const rule of rulesToSync) {
+        const { error } = await supabase.from('recurrence_rules').upsert({
+          id: rule.id,
+          frequency: rule.frequency,
+          quincena_n: rule.quincenaN,
+          start_date: rule.startDate,
+          end_date: rule.endDate,
+          amount: rule.amount,
+          type: rule.type,
+          category_id: rule.categoryId,
+          account_id: rule.accountId,
+          note: rule.note,
+          base_date_day: rule.baseDateDay,
+        });
+        if (error) console.error('[Supabase] Error sincronizando regla:', error);
+      }
+
+      for (const tx of transactionsToSync) {
+        console.log('[Supabase] Sincronizando transacción:', tx.id, tx.amount);
+        const { error } = await supabase.from('transactions').upsert({
+          id: tx.id,
+          amount: tx.amount,
+          type: tx.type,
+          date: tx.date,
+          category_id: tx.categoryId,
+          account_id: tx.accountId,
+          note: tx.note,
+          is_recurring: tx.isRecurring,
+          recurrence_rule_id: tx.recurrenceRuleId,
+        });
+        if (error) {
+          console.error('[Supabase] Error al guardar transacción:', error);
+          alert('Error al sincronizar transacción: ' + error.message);
+        }
+      }
+
+      // UPDATE ACCOUNT BALANCE
+      if (transactionsToSync.length > 0) {
+        const accountId = transactionsToSync[0].accountId;
+        const accountTransactions = newTransactions.filter((tx) => tx.accountId === accountId);
+        const newBalance = accountTransactions.reduce((acc, tx) => {
+          return tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount;
+        }, 0);
+        await supabase.from('accounts').update({ balance: newBalance }).eq('id', accountId);
+        setAccounts((prev) =>
+          prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a))
+        );
+      }
     } catch (error) {
       console.error('Error al guardar la transacción:', error);
       alert('Hubo un error al guardar la transacción. Por favor, inténtalo de nuevo.');
     }
   };
 
-  const performDeleteInstance = (tx: Transaction) => {
+  const performDeleteInstance = async (tx: Transaction) => {
     if (!tx || !tx.recurrenceRuleId) return;
 
     setRecurrenceExceptions((prev) => {
       if (prev.some((e) => e.ruleId === tx.recurrenceRuleId && e.date === tx.date)) return prev;
       return [...prev, { ruleId: tx.recurrenceRuleId!, date: tx.date }];
     });
-    setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
+    const updatedTransactions = transactions.filter((t) => t.id !== tx.id);
+    setTransactions(updatedTransactions);
     setRecurringDeleteTarget(null);
+
+    // Sync deletion
+    await supabase.from('transactions').delete().eq('id', tx.id);
+
+    // Update Balance
+    const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
+    const newBalance = accountTransactions.reduce(
+      (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
+      0
+    );
+    await supabase.from('accounts').update({ balance: newBalance }).eq('id', tx.accountId);
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
+    );
   };
 
-  const performDeleteSeries = (tx: Transaction) => {
+  const performDeleteSeries = async (tx: Transaction) => {
     if (!tx || !tx.recurrenceRuleId) return;
 
     setRecurrenceRules((prev) => prev.filter((r) => r.id !== tx.recurrenceRuleId));
     setRecurrenceExceptions((prev) => prev.filter((e) => e.ruleId !== tx.recurrenceRuleId));
-    setTransactions((prev) => prev.filter((t) => t.recurrenceRuleId !== tx.recurrenceRuleId));
+    const updatedTransactions = transactions.filter(
+      (t) => t.recurrenceRuleId !== tx.recurrenceRuleId
+    );
+    setTransactions(updatedTransactions);
     setRecurringDeleteTarget(null);
+
+    // Sync deletion
+    await supabase.from('transactions').delete().eq('recurrence_rule_id', tx.recurrenceRuleId);
+    await supabase.from('recurrence_rules').delete().eq('id', tx.recurrenceRuleId);
+
+    // Update Balance
+    const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
+    const newBalance = accountTransactions.reduce(
+      (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
+      0
+    );
+    await supabase.from('accounts').update({ balance: newBalance }).eq('id', tx.accountId);
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
+    );
   };
 
   const handleDeleteTransaction = (id: string) => {
@@ -392,14 +656,35 @@ const App: React.FC = () => {
       message:
         '¿Estás seguro de que deseas eliminar esta transacción? Esta acción no se puede deshacer.',
       isDestructive: true,
-      onConfirm: () => {
-        setTransactions((prev) => prev.filter((t) => t.id !== id));
+      onConfirm: async () => {
+        const updatedTransactions = transactions.filter((t) => t.id !== id);
+        setTransactions(updatedTransactions);
+
+        await supabase.from('transactions').delete().eq('id', id);
+
+        // Update Balance
+        const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
+        const newBalance = accountTransactions.reduce(
+          (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
+          0
+        );
+        await supabase.from('accounts').update({ balance: newBalance }).eq('id', tx.accountId);
+        setAccounts((prev) =>
+          prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
+        );
       },
     });
   };
 
-  const handleAddCategory = (category: Category) => {
+  const handleAddCategory = async (category: Category) => {
     setCategories((prev) => [...prev, category]);
+    await supabase.from('categories').insert({
+      id: category.id,
+      name: category.name,
+      type: category.type,
+      color: category.color,
+      icon: category.icon,
+    });
   };
 
   const handleDeleteCategory = (id: string) => {
@@ -409,8 +694,9 @@ const App: React.FC = () => {
       message:
         '¿Seguro que deseas eliminar esta categoría? Si hay transacciones asociadas, aparecerán como "Sin Categoría".',
       isDestructive: true,
-      onConfirm: () => {
+      onConfirm: async () => {
         setCategories((prev) => prev.filter((c) => c.id !== id));
+        await supabase.from('categories').delete().eq('id', id);
       },
     });
   };
@@ -433,6 +719,35 @@ const App: React.FC = () => {
     month: 'long',
     year: 'numeric',
   });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="font-medium text-slate-600 dark:text-slate-400 animate-pulse">
+          Sincronizando con Supabase...
+        </p>
+      </div>
+    );
+  }
+
+  if (initError && transactions.length === 0 && categories.length === 0) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-16 h-16 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-full flex items-center justify-center mb-6">
+          <AlertCircle size={32} />
+        </div>
+        <h2 className="text-2xl font-bold mb-2">Error de Conexión</h2>
+        <p className="text-slate-600 mb-8 max-w-md">{initError}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-6 py-2 bg-primary-600 text-white rounded-lg font-bold"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
