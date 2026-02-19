@@ -226,13 +226,28 @@ const App: React.FC = () => {
           );
         }
 
-        console.log('[FinanzaFlow] Iniciando descarga de datos...');
-        const [catRes, rulesRes, transRes, accRes] = await Promise.all([
-          supabase.from('categories').select('*'),
-          supabase.from('recurrence_rules').select('*'),
-          supabase.from('transactions').select('*'),
-          supabase.from('accounts').select('*'),
-        ]);
+        console.log('[FinanzaFlow] Iniciando descarga de datos (con timeout de 10s)...');
+
+        // Timeout de seguridad: Si en 10s no responde, dar error
+        const fetchWithTimeout = Promise.race([
+          Promise.all([
+            supabase.from('categories').select('*'),
+            supabase.from('recurrence_rules').select('*'),
+            supabase.from('transactions').select('*'),
+            supabase.from('accounts').select('*'),
+          ]),
+          new Promise((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error('Tiempo de espera agotado. Verifica la conexión o la URL de Supabase.')
+                ),
+              10000
+            )
+          ),
+        ]) as Promise<any[]>;
+
+        const [catRes, rulesRes, transRes, accRes] = await fetchWithTimeout;
 
         console.log('[FinanzaFlow] Respuesta recibida:', {
           cats: catRes.data?.length,
