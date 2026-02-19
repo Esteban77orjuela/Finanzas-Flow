@@ -155,16 +155,32 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    // Clear local storage on logout
-    Object.values(STORAGE_KEYS).forEach((key) => {
-      if (isBrowser) window.localStorage.removeItem(key);
-    });
+    console.log('[FinanzaFlow] Cerrando sesión...');
+    try {
+      // Intentar cerrar sesión en Supabase, pero no bloquearse si falla
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000)),
+      ]).catch((e) => console.warn('[FinanzaFlow] Supabase signOut falló o tardó demasiado:', e));
+    } catch (err) {
+      console.error('[FinanzaFlow] Error al cerrar sesión:', err);
+    }
+
+    // Limpiar TODO pase lo que pase con Supabase
+    if (isBrowser) {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    }
+    setSession(null);
     setTransactions([]);
     setCategories([]);
     setAccounts(DEFAULT_ACCOUNTS);
     setRecurrenceRules([]);
-    setRecurrenceExceptions([]);
+    setIsLoading(false);
+    console.log('[FinanzaFlow] Sesión limpiada localmente.');
+
+    // Forzar recarga total para asegurar estado limpio
+    if (isBrowser) window.location.reload();
   };
 
   // State
@@ -197,10 +213,19 @@ const App: React.FC = () => {
 
   // --- INITIAL DATA FETCH & MIGRATION ---
   useEffect(() => {
-    if (!session) return; // Don't fetch data if not logged in
+    if (!session) return;
     const initData = async () => {
       setIsLoading(true);
       try {
+        const supUrl = (supabase as any).supabaseUrl || '';
+        console.log('[FinanzaFlow] Verificando conexión...', supUrl);
+
+        if (!supUrl || supUrl.includes('placeholder') || !supUrl.startsWith('http')) {
+          throw new Error(
+            'La URL de Supabase no es válida. Verifica las variables de entorno (debe empezar con https://).'
+          );
+        }
+
         console.log('[FinanzaFlow] Iniciando descarga de datos...');
         const [catRes, rulesRes, transRes, accRes] = await Promise.all([
           supabase.from('categories').select('*'),
@@ -209,12 +234,12 @@ const App: React.FC = () => {
           supabase.from('accounts').select('*'),
         ]);
 
-        console.log('[FinanzaFlow] Datos recibidos de Supabase');
-
-        if (catRes.error) throw new Error(`Categorías: ${catRes.error.message}`);
-        if (rulesRes.error) throw new Error(`Reglas: ${rulesRes.error.message}`);
-        if (transRes.error) throw new Error(`Transacciones: ${transRes.error.message}`);
-        if (accRes.error) throw new Error(`Cuentas: ${accRes.error.message}`);
+        console.log('[FinanzaFlow] Respuesta recibida:', {
+          cats: catRes.data?.length,
+          rules: rulesRes.data?.length,
+          txs: transRes.data?.length,
+          accs: accRes.data?.length,
+        });
 
         const mappedCategories: Category[] = (catRes.data || []).map((c) => ({
           id: c.id,
