@@ -201,7 +201,7 @@ const App: React.FC = () => {
     const initData = async () => {
       setIsLoading(true);
       try {
-        // 1. Fetch current data from Supabase
+        console.log('[FinanzaFlow] Iniciando descarga de datos...');
         const [catRes, rulesRes, transRes, accRes] = await Promise.all([
           supabase.from('categories').select('*'),
           supabase.from('recurrence_rules').select('*'),
@@ -209,10 +209,12 @@ const App: React.FC = () => {
           supabase.from('accounts').select('*'),
         ]);
 
-        if (catRes.error) throw new Error(`Error en categorías: ${catRes.error.message}`);
-        if (rulesRes.error) throw new Error(`Error en reglas: ${rulesRes.error.message}`);
-        if (transRes.error) throw new Error(`Error en transacciones: ${transRes.error.message}`);
-        if (accRes.error) throw new Error(`Error en cuentas: ${accRes.error.message}`);
+        console.log('[FinanzaFlow] Datos recibidos de Supabase');
+
+        if (catRes.error) throw new Error(`Categorías: ${catRes.error.message}`);
+        if (rulesRes.error) throw new Error(`Reglas: ${rulesRes.error.message}`);
+        if (transRes.error) throw new Error(`Transacciones: ${transRes.error.message}`);
+        if (accRes.error) throw new Error(`Cuentas: ${accRes.error.message}`);
 
         const mappedCategories: Category[] = (catRes.data || []).map((c) => ({
           id: c.id,
@@ -766,6 +768,12 @@ const App: React.FC = () => {
         <p className="font-medium text-slate-600 dark:text-slate-400 animate-pulse">
           Sincronizando con Supabase...
         </p>
+        <button
+          onClick={handleLogout}
+          className="mt-8 text-sm text-slate-400 hover:text-rose-500 underline decoration-dotted"
+        >
+          ¿Atascado? Cerrar sesión y reintentar
+        </button>
       </div>
     );
   }
