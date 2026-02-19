@@ -801,6 +801,51 @@ const App: React.FC = () => {
     year: 'numeric',
   });
 
+  // --- AUTH GATE ---
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
+        <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-slate-400 font-medium">Cargando...</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <AuthPage />;
+  }
+
+  // SI HAY UN ERROR CRÍTICO AL INICIAR
+  if (initError) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mb-6 shadow-lg">
+          <AlertCircle size={32} />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+          Error de Conexión
+        </h2>
+        <p className="max-w-md text-slate-600 dark:text-slate-400 mb-8 p-4 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 font-mono text-xs overflow-auto">
+          {initError}
+        </p>
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+          >
+            Reintentar Conexión
+          </button>
+          <button
+            onClick={handleLogout}
+            className="px-6 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+          >
+            Cerrar Sesión y Limpiar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
@@ -816,38 +861,6 @@ const App: React.FC = () => {
         </button>
       </div>
     );
-  }
-
-  if (initError && transactions.length === 0 && categories.length === 0) {
-    return (
-      <div className="min-h-screen bg-white dark:bg-slate-950 flex flex-col items-center justify-center p-8 text-center">
-        <div className="w-16 h-16 bg-rose-50 dark:bg-rose-900/20 text-rose-600 rounded-full flex items-center justify-center mb-6">
-          <AlertCircle size={32} />
-        </div>
-        <h2 className="text-2xl font-bold mb-2">Error de Conexión</h2>
-        <p className="text-slate-600 mb-8 max-w-md">{initError}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-6 py-2 bg-primary-600 text-white rounded-lg font-bold"
-        >
-          Reintentar
-        </button>
-      </div>
-    );
-  }
-
-  // --- AUTH GATE ---
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
-        <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-slate-400 font-medium">Cargando...</p>
-      </div>
-    );
-  }
-
-  if (!session) {
-    return <AuthPage />;
   }
 
   return (
