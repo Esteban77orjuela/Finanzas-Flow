@@ -19,10 +19,12 @@ import CategorySettings from './components/CategorySettings';
 import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
 import AuthPage from './components/AuthPage';
+import AIAssistantModal, { AIAction } from './components/AIAssistantModal';
 import {
   LayoutDashboard,
   List,
   Plus,
+  Sparkles,
   Settings,
   Moon,
   Sun,
@@ -195,6 +197,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(getInitialView);
   const [darkMode, setDarkMode] = useState<boolean>(getInitialDarkMode);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   // Modal States
@@ -474,6 +477,141 @@ const App: React.FC = () => {
       }
     }
   }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions]);
+
+  // --- AI EXECUTION LOGIC ---
+  const handleAIExecute = async (actions: AIAction[]) => {
+    if (!session?.user?.id) {
+      alert('Sesión no válida para usar la IA');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const uId = session.user.id;
+      const newTransactions: Transaction[] = [];
+      const newRules: RecurrenceRule[] = [];
+      const freshCategories = [...categories];
+
+      for (const action of actions) {
+        // Explicitly convert types to ensure UI doesn't break
+        const amountNum =
+          typeof action.amount === 'string' ? parseFloat(action.amount) : action.amount;
+        const validDate = action.date || new Date().toISOString().split('T')[0];
+
+        // Find matching category or CREATE it if missing
+        let cat = freshCategories.find(
+          (c) =>
+            c.name.toLowerCase().includes(action.categoryName.toLowerCase()) ||
+            action.categoryName.toLowerCase().includes(c.name.toLowerCase())
+        );
+
+        if (!cat) {
+          console.log(`[FinanzaFlow] IA: Creando categoría faltante: ${action.categoryName}`);
+          const newCat: Category = {
+            id: generateId(),
+            name: action.categoryName,
+            type: action.transactionType,
+            color: '#6366f1', // Indigo default
+            icon: 'Tag',
+          };
+
+          const { error: catErr } = await supabase.from('categories').insert({
+            id: newCat.id,
+            name: newCat.name,
+            type: newCat.type,
+            color: newCat.color,
+            icon: newCat.icon,
+            user_id: uId,
+          });
+
+          if (!catErr) {
+            cat = newCat;
+            freshCategories.push(newCat);
+          } else {
+            console.error('Error creating AI category:', catErr);
+            cat = freshCategories[0]; // Fallback
+          }
+        }
+
+        const acc =
+          accounts.find((a) => a.name.toLowerCase().includes(action.accountName.toLowerCase())) ||
+          accounts.find((a) => a.name === 'Efectivo') ||
+          accounts[0];
+
+        if (action.type === 'RECURRING') {
+          const ruleId = generateId();
+          const rule: RecurrenceRule = {
+            id: ruleId,
+            amount: amountNum,
+            type: action.transactionType,
+            categoryId: cat.id,
+            accountId: acc.id,
+            frequency: action.frequency || 'MONTHLY',
+            quincenaN: undefined,
+            startDate: validDate,
+            note: action.description + ' (IA)',
+            baseDateDay: parseInt(validDate.split('-')[2]) || 1,
+          };
+
+          const { error } = await supabase.from('recurrence_rules').insert({
+            id: rule.id,
+            frequency: rule.frequency,
+            start_date: rule.startDate,
+            amount: rule.amount,
+            type: rule.type,
+            category_id: rule.categoryId,
+            account_id: rule.accountId,
+            note: rule.note,
+            user_id: uId,
+          });
+
+          if (error) throw error;
+          newRules.push(rule);
+        } else {
+          const txId = generateId();
+          const tx: Transaction = {
+            id: txId,
+            amount: amountNum,
+            type: action.transactionType,
+            date: validDate,
+            categoryId: cat.id,
+            accountId: acc.id,
+            note: action.description,
+            isRecurring: false,
+          };
+
+          const { error } = await supabase.from('transactions').insert({
+            id: tx.id,
+            amount: tx.amount,
+            type: tx.type,
+            date: tx.date,
+            category_id: tx.categoryId,
+            account_id: tx.accountId,
+            note: tx.note,
+            is_recurring: false,
+            user_id: uId,
+          });
+
+          if (error) throw error;
+          newTransactions.push(tx);
+        }
+      }
+
+      // Final State Updates
+      setCategories(freshCategories);
+      setTransactions((prev) => [...prev, ...newTransactions]);
+      setRecurrenceRules((prev) => [...prev, ...newRules]);
+
+      console.log(
+        `[FinanzaFlow] ¡Magia completada! ${newTransactions.length} transacciones y ${newRules.length} reglas creadas.`
+      );
+    } catch (error: any) {
+      console.error('AI Execution Error', error);
+      alert('Error de la IA: ' + (error.message || 'No se pudo guardar'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Derived Data
   const filteredTransactions = useMemo(
@@ -869,10 +1007,17 @@ const App: React.FC = () => {
       <header className="fixed top-0 w-full z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold">
+            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-primary-500/30">
               F
             </div>
             <span className="font-bold text-xl tracking-tight hidden sm:block">FinanzaFlow</span>
+
+            <button
+              onClick={() => setIsAIModalOpen(true)}
+              className="ml-4 px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-bold rounded-full shadow-lg shadow-indigo-500/30 flex items-center gap-1 hover:brightness-110 transition-all animate-pulse"
+            >
+              <Sparkles size={14} className="text-yellow-300" /> Asistente IA
+            </button>
           </div>
 
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
@@ -900,12 +1045,17 @@ const App: React.FC = () => {
             >
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
+            {session?.user?.email && (
+              <span className="hidden md:block text-xs text-slate-500 font-medium truncate max-w-[150px]">
+                {session.user.email}
+              </span>
+            )}
             <button
               onClick={handleLogout}
-              className="p-2 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors"
-              title="Cerrar sesión"
+              className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+              title="Cerrar Sesión"
             >
-              <LogOut size={18} />
+              <LogOut size={20} />
             </button>
           </div>
         </div>
@@ -1051,6 +1201,13 @@ const App: React.FC = () => {
         isDestructive={confirmModal.isDestructive}
       />
 
+      <AIAssistantModal
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
+        categories={categories}
+        accounts={accounts}
+        onExecuteContext={handleAIExecute}
+      />
       <RecurringDeleteModal
         isOpen={!!recurringDeleteTarget}
         onClose={() => setRecurringDeleteTarget(null)}
