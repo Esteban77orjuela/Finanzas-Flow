@@ -84,16 +84,21 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
         [
           {
             "type": "TRANSACTION" | "RECURRING",
-            "description": "Short description",
+            "description": "Short logical description",
             "amount": number,
             "transactionType": "INCOME" | "EXPENSE",
             "date": "YYYY-MM-DD",
             "categoryName": "Best match from list",
             "accountName": "Best match from list",
-            "frequency": "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "YEARLY",
+            "frequency": "BIWEEKLY" | "MONTHLY",
             "confidence": 1.0
           }
         ]
+        
+        Rules:
+        - If the user says "fijo", "cada mes", "mensual", "todos los meses", use type "RECURRING" and frequency "MONTHLY".
+        - If the user says "cada quincena", "quincenal", "el 15 y el 30" (create two rules), use type "RECURRING" and frequency "BIWEEKLY".
+        - For simple expenses or one-time income, use type "TRANSACTION".
       `;
 
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -165,33 +170,31 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-t-2xl text-white">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-md">
+        <div className="flex items-start sm:items-center justify-between p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-t-2xl text-white">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-md hidden sm:block">
               <Sparkles size={24} className="text-yellow-300" />
             </div>
-            <div>
-              <div>
-                <h2 className="text-xl font-bold">Asistente IA (Groq Speed)</h2>
-                <div className="flex items-center gap-2">
-                  <p className="text-indigo-100 text-sm">
-                    Describe tus movimientos y yo me encargo
-                  </p>
-                  {!showKeyInput && (
-                    <button
-                      onClick={() => setShowKeyInput(true)}
-                      className="text-[10px] bg-white/20 px-2 py-0.5 rounded hover:bg-white/30 transition-colors uppercase font-bold"
-                    >
-                      Cambiar Llave
-                    </button>
-                  )}
-                </div>
-              </div>{' '}
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold truncate">Asistente IA (Groq Speed)</h2>
+              <div className="flex items-center flex-wrap gap-2 mt-1">
+                <p className="text-indigo-100 text-xs sm:text-sm truncate">
+                  Describe tus movimientos y yo me encargo
+                </p>
+                {!showKeyInput && (
+                  <button
+                    onClick={() => setShowKeyInput(true)}
+                    className="text-[10px] bg-white/20 px-2 py-0.5 rounded hover:bg-white/30 transition-colors uppercase font-bold shrink-0"
+                  >
+                    Llave API
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            className="p-2 hover:bg-white/10 rounded-full transition-colors shrink-0"
           >
             <X size={20} />
           </button>

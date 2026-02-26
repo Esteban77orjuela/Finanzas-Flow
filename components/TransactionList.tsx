@@ -10,10 +10,16 @@ interface TransactionListProps {
   onDelete: (id: string) => void;
 }
 
-const TransactionList: React.FC<TransactionListProps> = ({ transactions, categories, onEdit, onDelete }) => {
-  
+const TransactionList: React.FC<TransactionListProps> = ({
+  transactions,
+  categories,
+  onEdit,
+  onDelete,
+}) => {
   // Sort by date desc
-  const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sorted = [...transactions].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
 
   if (sorted.length === 0) {
     return (
@@ -30,48 +36,77 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, categor
   return (
     <div className="space-y-3">
       {sorted.map((t) => {
-        const category = categories.find(c => c.id === t.categoryId);
+        const category = categories.find((c) => c.id === t.categoryId);
         const isIncome = t.type === TransactionType.INCOME;
-        
+
         return (
-          <div key={t.id} className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-all">
-            <div className="flex items-center gap-4">
-              <div 
-                className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow-sm
+          <div
+            key={t.id}
+            className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-all gap-4 sm:gap-0"
+          >
+            <div className="flex items-center gap-4 min-w-0">
+              <div
+                className={`w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-lg shadow-sm
                   ${isIncome ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20'}`}
-                style={category?.color ? { backgroundColor: `${category.color}20`, color: category.color } : {}}
+                style={
+                  category?.color
+                    ? { backgroundColor: `${category.color}20`, color: category.color }
+                    : {}
+                }
               >
                 {/* Fallback icon logic would go here, using emoji for simplicity now */}
-                {isIncome ? '💰' : '🏷️'} 
+                {isIncome ? '💰' : '🏷️'}
               </div>
-              
-              <div>
-                <p className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                  {category?.name || 'Sin Categoría'}
-                  {t.isRecurring && <Repeat size={12} className="text-slate-400" />}
+
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 truncate">
+                  <span className="truncate">{category?.name || 'Sin Categoría'}</span>
+                  {t.isRecurring && <Repeat size={12} className="text-slate-400 flex-shrink-0" />}
                 </p>
-                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <span>{new Date(t.date).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}</span>
+                <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  <span className="whitespace-nowrap">
+                    {new Date(t.date).toLocaleDateString('es-MX', {
+                      day: 'numeric',
+                      month: 'short',
+                    })}
+                  </span>
                   {t.note && (
                     <>
-                      <span>•</span>
-                      <span className="truncate max-w-[150px]">{t.note}</span>
+                      <span className="text-slate-300 dark:text-slate-600">•</span>
+                      <span className="truncate max-w-[120px] sm:max-w-xs">{t.note}</span>
                     </>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <span className={`font-bold text-base ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}>
-                {isIncome ? '+' : '-'}{formatCurrency(t.amount)}
+            <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
+              <span
+                className={`font-bold text-base whitespace-nowrap ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}
+              >
+                {isIncome ? '+' : '-'}
+                {formatCurrency(t.amount)}
               </span>
-              
-              <div className="flex gap-1 opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); console.log('Edit clicked:', t); onEdit(t); }} className="p-2 text-slate-400 hover:text-primary-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+
+              <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(t);
+                  }}
+                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                  title="Editar"
+                >
                   <Edit2 size={16} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); console.log('Delete clicked:', t.id); onDelete(t.id); }} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(t.id);
+                  }}
+                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                  title="Eliminar"
+                >
                   <Trash2 size={16} />
                 </button>
               </div>

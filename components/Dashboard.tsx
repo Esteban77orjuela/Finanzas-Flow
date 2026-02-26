@@ -2,8 +2,14 @@ import React, { useMemo } from 'react';
 import { Transaction, TransactionType, Category, DateFilter } from '../types';
 import { calculateTotals, formatCurrency } from '../utils';
 import {
-  ArrowUpCircle, ArrowDownCircle, Wallet, CalendarClock,
-  Receipt, ArrowRight, Edit2, Trash2
+  ArrowUpCircle,
+  ArrowDownCircle,
+  Wallet,
+  CalendarClock,
+  Receipt,
+  ArrowRight,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -21,27 +27,19 @@ interface TransactionRowProps {
   onDelete: (id: string) => void;
 }
 
-const TransactionRow: React.FC<TransactionRowProps> = ({
-  t,
-  category,
-  onEdit,
-  onDelete
-}) => {
+const TransactionRow: React.FC<TransactionRowProps> = ({ t, category, onEdit, onDelete }) => {
   const isIncome = t.type === TransactionType.INCOME;
   const dateObj = new Date(t.date + 'T00:00:00');
 
   return (
-    <div
-      className="relative flex items-center p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors group min-h-[4rem]"
-      onClick={() => console.log('TransactionRow row clicked:', t.id)}
-    >
-      {/* Información Principal (Izquierda) - Con padding derecho para no chocar con acciones */}
-      <div className="flex items-center gap-3 pr-[140px] flex-1 min-w-0">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors group min-h-[4rem] gap-2 sm:gap-0">
+      {/* Información Principal (Izquierda) */}
+      <div className="flex items-center gap-3 flex-1 min-w-0">
         <div
           className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-sm shadow-sm opacity-90"
           style={{
             backgroundColor: category?.color ? `${category.color}15` : '#f1f5f9',
-            color: category?.color || '#64748b'
+            color: category?.color || '#64748b',
           }}
         >
           {category?.name.charAt(0).toUpperCase() || '?'}
@@ -51,43 +49,45 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
             {category?.name || 'Sin Categoría'}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-            {dateObj.getDate()} {dateObj.toLocaleString('es-MX', { month: 'short' })} {t.note && `• ${t.note}`}
+            {dateObj.getDate()} {dateObj.toLocaleString('es-MX', { month: 'short' })}{' '}
+            {t.note && `• ${t.note}`}
           </p>
         </div>
       </div>
 
-      {/* Acciones y Monto (Derecha) - Posicionados Absolutamente para evitar bloqueos */}
-      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-end gap-3 z-50">
-        <span className={`font-semibold text-sm whitespace-nowrap ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>
-          {isIncome ? '+' : '-'}{formatCurrency(t.amount)}
+      {/* Acciones y Monto (Derecha) */}
+      <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto pl-12 sm:pl-0">
+        <span
+          className={`font-semibold text-sm whitespace-nowrap ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}
+        >
+          {isIncome ? '+' : '-'}
+          {formatCurrency(t.amount)}
         </span>
 
-        <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           <button
             type="button"
             onClick={(e) => {
-              console.log('Dashboard ACTION (Abs): Edit clicked', t.id);
               e.preventDefault();
               e.stopPropagation();
               onEdit(t);
             }}
-            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full transition-all cursor-pointer z-50"
+            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full transition-all cursor-pointer"
             title="Editar"
           >
-            <Edit2 size={18} className="pointer-events-none" />
+            <Edit2 size={16} className="pointer-events-none" />
           </button>
           <button
             type="button"
             onClick={(e) => {
-              console.log('Dashboard ACTION (Abs): Delete clicked', t.id);
               e.preventDefault();
               e.stopPropagation();
               onDelete(t.id);
             }}
-            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-full transition-all cursor-pointer z-50"
+            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-full transition-all cursor-pointer"
             title="Eliminar"
           >
-            <Trash2 size={18} className="pointer-events-none" />
+            <Trash2 size={16} className="pointer-events-none" />
           </button>
         </div>
       </div>
@@ -95,17 +95,31 @@ const TransactionRow: React.FC<TransactionRowProps> = ({
   );
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter, onEdit, onDelete }) => {
+const Dashboard: React.FC<DashboardProps> = ({
+  transactions,
+  categories,
+  filter,
+  onEdit,
+  onDelete,
+}) => {
   const { income, expense, balance } = useMemo(() => calculateTotals(transactions), [transactions]);
 
   // Split transactions into Fixed (Recurring) and Variable (Normal)
   const { fixedTransactions, variableTransactions, fixedStats, variableStats } = useMemo(() => {
-    const fixed = transactions.filter(t => t.isRecurring).sort((a, b) => a.date.localeCompare(b.date));
-    const variable = transactions.filter(t => !t.isRecurring).sort((a, b) => b.date.localeCompare(a.date)); // Newest first
+    const fixed = transactions
+      .filter((t) => t.isRecurring)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const variable = transactions
+      .filter((t) => !t.isRecurring)
+      .sort((a, b) => b.date.localeCompare(a.date)); // Newest first
 
     const calcStats = (txs: Transaction[]) => {
-      const inc = txs.filter(t => t.type === TransactionType.INCOME).reduce((acc, t) => acc + t.amount, 0);
-      const exp = txs.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, t) => acc + t.amount, 0);
+      const inc = txs
+        .filter((t) => t.type === TransactionType.INCOME)
+        .reduce((acc, t) => acc + t.amount, 0);
+      const exp = txs
+        .filter((t) => t.type === TransactionType.EXPENSE)
+        .reduce((acc, t) => acc + t.amount, 0);
       return { income: inc, expense: exp };
     };
 
@@ -113,11 +127,11 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
       fixedTransactions: fixed,
       variableTransactions: variable,
       fixedStats: calcStats(fixed),
-      variableStats: calcStats(variable)
+      variableStats: calcStats(variable),
     };
   }, [transactions]);
 
-  const getCategory = (id: string) => categories.find(c => c.id === id);
+  const getCategory = (id: string) => categories.find((c) => c.id === id);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -128,9 +142,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
             <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400">
               <Wallet size={24} />
             </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">Balance Total</span>
+            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">
+              Balance Total
+            </span>
           </div>
-          <span className={`text-3xl font-bold ${balance >= 0 ? 'text-slate-800 dark:text-white' : 'text-red-500'}`}>
+          <span
+            className={`text-3xl font-bold ${balance >= 0 ? 'text-slate-800 dark:text-white' : 'text-red-500'}`}
+          >
             {formatCurrency(balance)}
           </span>
         </div>
@@ -140,7 +158,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
             <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-600 dark:text-emerald-400">
               <ArrowUpCircle size={24} />
             </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">Ingresos</span>
+            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">
+              Ingresos
+            </span>
           </div>
           <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
             {formatCurrency(income)}
@@ -152,7 +172,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
             <div className="p-2 bg-rose-50 dark:bg-rose-900/30 rounded-full text-rose-600 dark:text-rose-400">
               <ArrowDownCircle size={24} />
             </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">Gastos</span>
+            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">
+              Gastos
+            </span>
           </div>
           <span className="text-3xl font-bold text-rose-600 dark:text-rose-400">
             {formatCurrency(expense)}
@@ -162,13 +184,14 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
 
       {/* Detail Sections: Fixed vs Variable */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
         {/* Fixed / Recurring Section */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-full">
           <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <CalendarClock className="text-amber-500" size={20} />
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200">Fijos y Recurrentes</h3>
+              <h3 className="font-semibold text-slate-800 dark:text-slate-200">
+                Fijos y Recurrentes
+              </h3>
             </div>
             <div className="text-xs font-medium px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/30">
               Comprometido
@@ -178,18 +201,22 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
           <div className="px-5 py-4 grid grid-cols-2 gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
             <div>
               <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Ingresos Fijos</p>
-              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(fixedStats.income)}</p>
+              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                {formatCurrency(fixedStats.income)}
+              </p>
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Gastos Fijos</p>
-              <p className="text-lg font-bold text-rose-600 dark:text-rose-400">{formatCurrency(fixedStats.expense)}</p>
+              <p className="text-lg font-bold text-rose-600 dark:text-rose-400">
+                {formatCurrency(fixedStats.expense)}
+              </p>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto max-h-[400px] p-2 pr-3 custom-scrollbar relative z-0">
             {fixedTransactions.length > 0 ? (
               <div className="space-y-1">
-                {fixedTransactions.map(t => (
+                {fixedTransactions.map((t) => (
                   <TransactionRow
                     key={t.id}
                     t={t}
@@ -213,7 +240,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
           <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <Receipt className="text-indigo-500" size={20} />
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200">Variables y Diarios</h3>
+              <h3 className="font-semibold text-slate-800 dark:text-slate-200">
+                Variables y Diarios
+              </h3>
             </div>
             <div className="text-xs font-medium px-2 py-1 rounded bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/30">
               Actividad
@@ -222,19 +251,27 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, categories, filter,
 
           <div className="px-5 py-4 grid grid-cols-2 gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
             <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Ingresos Extras</p>
-              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(variableStats.income)}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">
+                Ingresos Extras
+              </p>
+              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                {formatCurrency(variableStats.income)}
+              </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Gastos Variables</p>
-              <p className="text-lg font-bold text-rose-600 dark:text-rose-400">{formatCurrency(variableStats.expense)}</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">
+                Gastos Variables
+              </p>
+              <p className="text-lg font-bold text-rose-600 dark:text-rose-400">
+                {formatCurrency(variableStats.expense)}
+              </p>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto max-h-[400px] p-2 pr-3 custom-scrollbar relative z-0">
             {variableTransactions.length > 0 ? (
               <div className="space-y-1">
-                {variableTransactions.map(t => (
+                {variableTransactions.map((t) => (
                   <TransactionRow
                     key={t.id}
                     t={t}

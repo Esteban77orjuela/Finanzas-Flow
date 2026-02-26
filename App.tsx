@@ -15,6 +15,7 @@ import { generateId, filterTransactions, generateMissingRecurringTransactions } 
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
+import QuickActionPanel from './components/QuickActionPanel';
 import CategorySettings from './components/CategorySettings';
 import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
@@ -34,6 +35,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
+import CategoryFormModal from './components/CategoryFormModal';
 import RecurringDeleteModal from './components/RecurringDeleteModal';
 import { supabase } from './supabaseClient';
 import { AlertCircle } from 'lucide-react';
@@ -159,29 +161,30 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     console.log('[FinanzaFlow] Cerrando sesión...');
     try {
-      // Intentar cerrar sesión en Supabase, pero no bloquearse si falla
       await Promise.race([
         supabase.auth.signOut(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000)),
-      ]).catch((e) => console.warn('[FinanzaFlow] Supabase signOut falló o tardó demasiado:', e));
+      ]).catch((e) => console.warn('[FinanzaFlow] Supabase signOut falló:', e));
     } catch (err) {
       console.error('[FinanzaFlow] Error al cerrar sesión:', err);
     }
 
-    // Limpiar TODO pase lo que pase con Supabase
+    // Limpiar SOLO las claves de nuestra App para no afectar a otros proyectos en localhost
     if (isBrowser) {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
+      Object.keys(STORAGE_KEYS).forEach((key) => {
+        localStorage.removeItem(STORAGE_KEYS[key as keyof typeof STORAGE_KEYS]);
+      });
+      // sessionStorage.clear(); // Opcional, pero mantengámoslo si es necesario
     }
+
     setSession(null);
     setTransactions([]);
     setCategories([]);
     setAccounts(DEFAULT_ACCOUNTS);
     setRecurrenceRules([]);
+    setRecurrenceExceptions([]);
     setIsLoading(false);
-    console.log('[FinanzaFlow] Sesión limpiada localmente.');
 
-    // Forzar recarga total para asegurar estado limpio
     if (isBrowser) window.location.reload();
   };
 
@@ -198,7 +201,9 @@ const App: React.FC = () => {
   const [darkMode, setDarkMode] = useState<boolean>(getInitialDarkMode);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [defaultFormType, setDefaultFormType] = useState<TransactionType>(TransactionType.EXPENSE);
 
   // Modal States
   const [confirmModal, setConfirmModal] = useState({
@@ -234,10 +239,10 @@ const App: React.FC = () => {
         // Timeout de seguridad: Si en 10s no responde, dar error
         const fetchWithTimeout = Promise.race([
           Promise.all([
-            supabase.from('categories').select('*'),
-            supabase.from('recurrence_rules').select('*'),
-            supabase.from('transactions').select('*'),
-            supabase.from('accounts').select('*'),
+            supabase.from('categories').select('*').eq('user_id', session.user.id),
+            supabase.from('recurrence_rules').select('*').eq('user_id', session.user.id),
+            supabase.from('transactions').select('*').eq('user_id', session.user.id),
+            supabase.from('accounts').select('*').eq('user_id', session.user.id),
           ]),
           new Promise((_, reject) =>
             setTimeout(
@@ -321,6 +326,7 @@ const App: React.FC = () => {
               type: c.type,
               color: c.color,
               icon: c.icon,
+              user_id: session.user.id,
             }))
           );
           finalCats = localCats;
@@ -335,6 +341,7 @@ const App: React.FC = () => {
               name: a.name,
               type: a.type,
               balance: a.balance,
+              user_id: session.user.id,
             }))
           );
           finalAccs = localAccs;
@@ -356,6 +363,7 @@ const App: React.FC = () => {
               account_id: r.accountId,
               note: r.note,
               base_date_day: r.baseDateDay,
+              user_id: session.user.id,
             }))
           );
           finalRules = localRules;
@@ -375,6 +383,7 @@ const App: React.FC = () => {
               note: t.note,
               is_recurring: t.isRecurring,
               recurrence_rule_id: t.recurrenceRuleId,
+              user_id: session.user.id,
             }))
           );
           finalTrans = localTrans;
@@ -385,6 +394,9 @@ const App: React.FC = () => {
         setAccounts(finalAccs);
         setRecurrenceRules(finalRules);
         setTransactions(finalTrans);
+        setRecurrenceExceptions(
+          readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) || []
+        );
       } catch (err: any) {
         console.error('Error inicializando Supabase:', err);
         setInitError(err.message);
@@ -469,6 +481,7 @@ const App: React.FC = () => {
               note: tx.note,
               is_recurring: tx.isRecurring,
               recurrence_rule_id: tx.recurrenceRuleId,
+              user_id: session?.user?.id,
             });
             if (error) console.error('[Supabase] Error sincronizando tx recurrente:', error);
           }
@@ -493,10 +506,15 @@ const App: React.FC = () => {
       const freshCategories = [...categories];
 
       for (const action of actions) {
-        // Explicitly convert types to ensure UI doesn't break
-        const amountNum =
+        // Validation & Sanitization
+        let amountNum =
           typeof action.amount === 'string' ? parseFloat(action.amount) : action.amount;
-        const validDate = action.date || new Date().toISOString().split('T')[0];
+        if (isNaN(amountNum)) amountNum = 0;
+
+        let validDate = action.date || new Date().toISOString().split('T')[0];
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(validDate)) {
+          validDate = new Date().toISOString().split('T')[0];
+        }
 
         // Find matching category or CREATE it if missing
         let cat = freshCategories.find(
@@ -509,9 +527,9 @@ const App: React.FC = () => {
           console.log(`[FinanzaFlow] IA: Creando categoría faltante: ${action.categoryName}`);
           const newCat: Category = {
             id: generateId(),
-            name: action.categoryName,
+            name: action.categoryName || 'Sin Categoría',
             type: action.transactionType,
-            color: '#6366f1', // Indigo default
+            color: action.transactionType === TransactionType.INCOME ? '#10b981' : '#f43f5e',
             icon: 'Tag',
           };
 
@@ -529,9 +547,14 @@ const App: React.FC = () => {
             freshCategories.push(newCat);
           } else {
             console.error('Error creating AI category:', catErr);
-            cat = freshCategories[0]; // Fallback
+            // Fallback to any category of the same type
+            cat =
+              freshCategories.find((c) => c.type === action.transactionType) || freshCategories[0];
           }
         }
+
+        // Final safety check
+        if (!cat) continue;
 
         const acc =
           accounts.find((a) => a.name.toLowerCase().includes(action.accountName.toLowerCase())) ||
@@ -540,6 +563,9 @@ const App: React.FC = () => {
 
         if (action.type === 'RECURRING') {
           const ruleId = generateId();
+          const dayNum = parseInt(validDate.split('-')[2]) || 1;
+          const qN = dayNum <= 15 ? 'Q1' : 'Q2';
+
           const rule: RecurrenceRule = {
             id: ruleId,
             amount: amountNum,
@@ -547,10 +573,10 @@ const App: React.FC = () => {
             categoryId: cat.id,
             accountId: acc.id,
             frequency: action.frequency || 'MONTHLY',
-            quincenaN: undefined,
+            quincenaN: action.frequency === 'BIWEEKLY' ? qN : undefined,
             startDate: validDate,
-            note: action.description + ' (IA)',
-            baseDateDay: parseInt(validDate.split('-')[2]) || 1,
+            note: (action.description || 'Gasto IA') + ' (IA)',
+            baseDateDay: dayNum,
           };
 
           const { error } = await supabase.from('recurrence_rules').insert({
@@ -576,7 +602,7 @@ const App: React.FC = () => {
             date: validDate,
             categoryId: cat.id,
             accountId: acc.id,
-            note: action.description,
+            note: action.description || 'Transacción IA',
             isRecurring: false,
           };
 
@@ -721,7 +747,23 @@ const App: React.FC = () => {
             transactionsToSync.push(updatedTx);
           }
         } else {
-          if (editingTransaction.isRecurring) {
+          if (editingTransaction.isRecurring && editingTransaction.recurrenceRuleId) {
+            // 1. Mark this date as an exception so it's never re-generated
+            const exception = {
+              ruleId: editingTransaction.recurrenceRuleId,
+              date: editingTransaction.date,
+            };
+            setRecurrenceExceptions((prev) => [...prev, exception]);
+
+            // 2. Remove the OLD record from state and Supabase
+            newTransactions = newTransactions.filter((item) => item.id !== editingTransaction.id);
+            await supabase
+              .from('transactions')
+              .delete()
+              .eq('id', editingTransaction.id)
+              .eq('user_id', session?.user?.id);
+
+            // 3. Create the new DETACHED record
             const detachedTx: Transaction = {
               ...t,
               id: generateId(),
@@ -766,6 +808,7 @@ const App: React.FC = () => {
           account_id: rule.accountId,
           note: rule.note,
           base_date_day: rule.baseDateDay,
+          user_id: session?.user?.id,
         });
         if (error) console.error('[Supabase] Error sincronizando regla:', error);
       }
@@ -782,11 +825,9 @@ const App: React.FC = () => {
           note: tx.note,
           is_recurring: tx.isRecurring,
           recurrence_rule_id: tx.recurrenceRuleId,
+          user_id: session?.user?.id,
         });
-        if (error) {
-          console.error('[Supabase] Error al guardar transacción:', error);
-          alert('Error al sincronizar transacción: ' + error.message);
-        }
+        if (error) throw error;
       }
 
       // UPDATE ACCOUNT BALANCE
@@ -796,7 +837,11 @@ const App: React.FC = () => {
         const newBalance = accountTransactions.reduce((acc, tx) => {
           return tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount;
         }, 0);
-        await supabase.from('accounts').update({ balance: newBalance }).eq('id', accountId);
+        await supabase
+          .from('accounts')
+          .update({ balance: newBalance })
+          .eq('id', accountId)
+          .eq('user_id', session?.user?.id);
         setAccounts((prev) =>
           prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a))
         );
@@ -819,7 +864,7 @@ const App: React.FC = () => {
     setRecurringDeleteTarget(null);
 
     // Sync deletion
-    await supabase.from('transactions').delete().eq('id', tx.id);
+    await supabase.from('transactions').delete().eq('id', tx.id).eq('user_id', session?.user?.id);
 
     // Update Balance
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
@@ -827,7 +872,11 @@ const App: React.FC = () => {
       (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
       0
     );
-    await supabase.from('accounts').update({ balance: newBalance }).eq('id', tx.accountId);
+    await supabase
+      .from('accounts')
+      .update({ balance: newBalance })
+      .eq('id', tx.accountId)
+      .eq('user_id', session?.user?.id);
     setAccounts((prev) =>
       prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
     );
@@ -845,8 +894,16 @@ const App: React.FC = () => {
     setRecurringDeleteTarget(null);
 
     // Sync deletion
-    await supabase.from('transactions').delete().eq('recurrence_rule_id', tx.recurrenceRuleId);
-    await supabase.from('recurrence_rules').delete().eq('id', tx.recurrenceRuleId);
+    await supabase
+      .from('transactions')
+      .delete()
+      .eq('recurrence_rule_id', tx.recurrenceRuleId)
+      .eq('user_id', session?.user?.id);
+    await supabase
+      .from('recurrence_rules')
+      .delete()
+      .eq('id', tx.recurrenceRuleId)
+      .eq('user_id', session?.user?.id);
 
     // Update Balance
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
@@ -854,7 +911,11 @@ const App: React.FC = () => {
       (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
       0
     );
-    await supabase.from('accounts').update({ balance: newBalance }).eq('id', tx.accountId);
+    await supabase
+      .from('accounts')
+      .update({ balance: newBalance })
+      .eq('id', tx.accountId)
+      .eq('user_id', session?.user?.id);
     setAccounts((prev) =>
       prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
     );
@@ -877,9 +938,8 @@ const App: React.FC = () => {
       isDestructive: true,
       onConfirm: async () => {
         const updatedTransactions = transactions.filter((t) => t.id !== id);
+        await supabase.from('transactions').delete().eq('id', id).eq('user_id', session?.user?.id);
         setTransactions(updatedTransactions);
-
-        await supabase.from('transactions').delete().eq('id', id);
 
         // Update Balance
         const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
@@ -887,7 +947,11 @@ const App: React.FC = () => {
           (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
           0
         );
-        await supabase.from('accounts').update({ balance: newBalance }).eq('id', tx.accountId);
+        await supabase
+          .from('accounts')
+          .update({ balance: newBalance })
+          .eq('id', tx.accountId)
+          .eq('user_id', session?.user?.id);
         setAccounts((prev) =>
           prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
         );
@@ -903,7 +967,22 @@ const App: React.FC = () => {
       type: category.type,
       color: category.color,
       icon: category.icon,
+      user_id: session?.user?.id,
     });
+  };
+
+  const handleUpdateCategory = async (category: Category) => {
+    setCategories((prev) => prev.map((c) => (c.id === category.id ? category : c)));
+    await supabase
+      .from('categories')
+      .update({
+        name: category.name,
+        type: category.type,
+        color: category.color,
+        icon: category.icon,
+      })
+      .eq('id', category.id)
+      .eq('user_id', session?.user?.id);
   };
 
   const handleDeleteCategory = (id: string) => {
@@ -915,7 +994,7 @@ const App: React.FC = () => {
       isDestructive: true,
       onConfirm: async () => {
         setCategories((prev) => prev.filter((c) => c.id !== id));
-        await supabase.from('categories').delete().eq('id', id);
+        await supabase.from('categories').delete().eq('id', id).eq('user_id', session?.user?.id);
       },
     });
   };
@@ -1066,22 +1145,22 @@ const App: React.FC = () => {
         {/* Period Filter Tabs */}
         {(view === 'DASHBOARD' || view === 'TRANSACTIONS') && (
           <div className="flex justify-center mb-8">
-            <div className="bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 inline-flex">
+            <div className="bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex max-w-full overflow-x-auto custom-scrollbar">
               <button
                 onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q1 }))}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q1 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${dateFilter.period === PeriodType.Q1 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
               >
                 1ª Quincena
               </button>
               <button
                 onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q2 }))}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q2 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${dateFilter.period === PeriodType.Q2 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
               >
                 2ª Quincena
               </button>
               <button
                 onClick={() => setDateFilter((prev) => ({ ...prev, period: 'ALL' }))}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${dateFilter.period === 'ALL' ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${dateFilter.period === 'ALL' ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
               >
                 Mes Completo
               </button>
@@ -1092,6 +1171,20 @@ const App: React.FC = () => {
         {/* Dynamic Views */}
         {view === 'DASHBOARD' && (
           <>
+            <QuickActionPanel
+              onAddExpense={() => {
+                setEditingTransaction(null);
+                setDefaultFormType(TransactionType.EXPENSE);
+                setIsModalOpen(true);
+              }}
+              onAddIncome={() => {
+                setEditingTransaction(null);
+                setDefaultFormType(TransactionType.INCOME);
+                setIsModalOpen(true);
+              }}
+              onOpenAI={() => setIsAIModalOpen(true)}
+              onAddCategory={() => setIsCategoryModalOpen(true)}
+            />
             <Dashboard
               transactions={filteredTransactions}
               categories={categories}
@@ -1126,7 +1219,9 @@ const App: React.FC = () => {
             <CategorySettings
               categories={categories}
               onAdd={handleAddCategory}
+              onUpdate={handleUpdateCategory}
               onDelete={handleDeleteCategory}
+              onOpenAddModal={() => setIsCategoryModalOpen(true)}
             />
           </div>
         )}
@@ -1182,6 +1277,7 @@ const App: React.FC = () => {
 
       {/* Modals */}
       <TransactionForm
+        key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSave={handleSaveTransaction}
@@ -1189,6 +1285,7 @@ const App: React.FC = () => {
         categories={categories}
         accounts={accounts}
         initialData={editingTransaction}
+        defaultType={defaultFormType}
       />
       <FloatingCalculator />
 
@@ -1215,6 +1312,11 @@ const App: React.FC = () => {
           recurringDeleteTarget && performDeleteInstance(recurringDeleteTarget)
         }
         onDeleteSeries={() => recurringDeleteTarget && performDeleteSeries(recurringDeleteTarget)}
+      />
+      <CategoryFormModal
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        onAdd={handleAddCategory}
       />
     </div>
   );

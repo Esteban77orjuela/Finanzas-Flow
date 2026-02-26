@@ -25,13 +25,13 @@ export const filterTransactions = (
 ): Transaction[] => {
   return transactions.filter((t) => {
     // Fix date parsing for timezones by appending T00:00:00
-    const d = new Date(t.date + 'T00:00:00'); 
+    const d = new Date(t.date + 'T00:00:00');
     const isSameMonth = d.getMonth() === month && d.getFullYear() === year;
-    
+
     if (!isSameMonth) return false;
 
     if (period === 'ALL' || period === PeriodType.MONTH) return true;
-    
+
     const tPeriod = d.getDate() <= 15 ? PeriodType.Q1 : PeriodType.Q2;
     return tPeriod === period;
   });
@@ -41,7 +41,7 @@ export const calculateTotals = (transactions: Transaction[]) => {
   const income = transactions
     .filter((t) => t.type === TransactionType.INCOME)
     .reduce((acc, curr) => acc + curr.amount, 0);
-  
+
   const expense = transactions
     .filter((t) => t.type === TransactionType.EXPENSE)
     .reduce((acc, curr) => acc + curr.amount, 0);
@@ -63,11 +63,11 @@ export const generateMissingRecurringTransactions = (
   const newTransactions: Transaction[] = [];
   const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
 
-  rules.forEach(rule => {
+  rules.forEach((rule) => {
     // 1. Check if rule is active for this period
     const ruleStart = new Date(rule.startDate + 'T00:00:00');
     const periodEnd = new Date(targetYear, targetMonth, daysInMonth);
-    
+
     // If rule starts after this month, skip
     if (ruleStart > periodEnd) return;
 
@@ -80,32 +80,39 @@ export const generateMissingRecurringTransactions = (
 
     // 2. Determine expected dates for this month
     const expectedDates: number[] = [];
-    
+
     // Logic for Monthly AND Biweekly
     // Note: Per requirements, 'BIWEEKLY' now strictly means "Appears once in the selected quincena".
-    // It does NOT duplicate automatically. The user must create two rules if they want two payments.
-    
-    // Just the base day, clamped to daysInMonth (e.g. 31st becomes 30th)
-    const day = Math.min(rule.baseDateDay, daysInMonth);
+
+    // Adjust day based on Quincena if frequency is BIWEEKLY
+    let day = Math.min(rule.baseDateDay, daysInMonth);
+
+    if (rule.frequency === 'BIWEEKLY' && rule.quincenaN) {
+      if (rule.quincenaN === 'Q1' && day > 15) {
+        day = 15; // Cap at end of Q1
+      } else if (rule.quincenaN === 'Q2' && day <= 15) {
+        day = Math.min(day + 15, daysInMonth); // Shift to Q2
+      }
+    }
+
     expectedDates.push(day);
 
     // 3. For each expected date, check if a transaction linked to this rule exists
-    expectedDates.forEach(day => {
+    expectedDates.forEach((day) => {
       const dateStr = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const dateObj = new Date(dateStr + 'T00:00:00');
 
       // Check Strict Bounds
-      if (dateObj < ruleStart) return; 
+      if (dateObj < ruleStart) return;
       if (rule.endDate && dateObj > new Date(rule.endDate + 'T00:00:00')) return;
 
       // Check if ALREADY exists
-      const exists = existingTransactions.some(t => 
-        t.recurrenceRuleId === rule.id && 
-        t.date === dateStr
+      const exists = existingTransactions.some(
+        (t) => t.recurrenceRuleId === rule.id && t.date === dateStr
       );
 
-      const isException = recurrenceExceptions.some(e =>
-        e.ruleId === rule.id && e.date === dateStr
+      const isException = recurrenceExceptions.some(
+        (e) => e.ruleId === rule.id && e.date === dateStr
       );
 
       if (!exists && !isException) {
@@ -118,7 +125,7 @@ export const generateMissingRecurringTransactions = (
           date: dateStr,
           note: rule.note + ' (Recurrente)',
           isRecurring: true,
-          recurrenceRuleId: rule.id
+          recurrenceRuleId: rule.id,
         });
       }
     });
