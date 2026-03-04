@@ -32,6 +32,7 @@ import {
   Plus,
   Sparkles,
   Settings,
+  Calculator,
   Moon,
   Sun,
   ChevronLeft,
@@ -205,13 +206,22 @@ const App: React.FC = () => {
   const [view, setView] = useState<ViewState>(getInitialView);
   const [darkMode, setDarkMode] = useState<boolean>(getInitialDarkMode);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [defaultFormType, setDefaultFormType] = useState<TransactionType>(TransactionType.EXPENSE);
 
   // Modal States
-  const [confirmModal, setConfirmModal] = useState({
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDestructive: boolean;
+  }>({
     isOpen: false,
     title: '',
     message: '',
@@ -941,7 +951,7 @@ const App: React.FC = () => {
       return;
     }
 
-    setConfirmModal({
+    setConfirmDialog({
       isOpen: true,
       title: 'Eliminar Transacción',
       message:
@@ -999,7 +1009,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteCategory = (id: string) => {
-    setConfirmModal({
+    setConfirmDialog({
       isOpen: true,
       title: 'Eliminar Categoría',
       message:
@@ -1232,10 +1242,28 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {view === 'PLANNING' && <PlanningDocs />}
-
         {view === 'SETTINGS' && (
-          <div className="animate-fade-in pb-20">
+          <div className="animate-fade-in pb-20 space-y-6">
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400">
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                    Documentación
+                  </h3>
+                  <p className="text-xs text-slate-500">Guía y planificación</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setView('PLANNING')}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors"
+              >
+                Abrir
+              </button>
+            </div>
+
             <CategorySettings
               categories={categories}
               onAdd={handleAddCategory}
@@ -1245,52 +1273,71 @@ const App: React.FC = () => {
             />
           </div>
         )}
+
+        {view === 'PLANNING' && (
+          <div className="animate-fade-in">
+            <button
+              onClick={() => setView('SETTINGS')}
+              className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-sm mb-6 hover:underline"
+            >
+              <ChevronLeft size={16} /> Volver a Ajustes
+            </button>
+            <PlanningDocs />
+          </div>
+        )}
       </main>
 
-      {/* Floating Action Button (FAB) */}
-      <button
-        onClick={() => {
-          setEditingTransaction(null);
-          setIsModalOpen(true);
-        }}
-        className="fixed bottom-20 right-4 sm:right-6 md:right-12 w-12 h-12 sm:w-14 sm:h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg shadow-primary-600/40 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 z-40"
-      >
-        <Plus size={24} />
-      </button>
-
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 h-16 pb-safe z-40">
-        <div className="grid grid-cols-4 h-full max-w-lg mx-auto">
+      <nav className="fixed bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 h-16 pb-safe z-50">
+        <div className="grid grid-cols-5 h-full max-w-lg mx-auto relative px-2">
+          {/* Tab 1: Inicio */}
           <button
             onClick={() => setView('DASHBOARD')}
-            className={`flex flex-col items-center justify-center gap-1 ${view === 'DASHBOARD' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'DASHBOARD' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
-            <LayoutDashboard size={20} />
-            <span className="text-[10px] font-medium">Inicio</span>
+            <LayoutDashboard size={22} />
+            <span className="text-[10px] font-bold">Inicio</span>
           </button>
 
+          {/* Tab 2: Historial */}
           <button
             onClick={() => setView('TRANSACTIONS')}
-            className={`flex flex-col items-center justify-center gap-1 ${view === 'TRANSACTIONS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'TRANSACTIONS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
-            <List size={20} />
-            <span className="text-[10px] font-medium">Historial</span>
+            <List size={22} />
+            <span className="text-[10px] font-bold">Historial</span>
           </button>
 
+          {/* Tab 3: Central FAB (+) */}
+          <div className="relative flex justify-center items-center">
+            <button
+              onClick={() => {
+                setEditingTransaction(null);
+                setIsModalOpen(true);
+              }}
+              className="absolute -top-6 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-xl shadow-primary-600/30 flex items-center justify-center transition-all hover:scale-105 active:scale-90 ring-4 ring-white dark:ring-slate-900"
+              aria-label="Añadir transacción"
+            >
+              <Plus size={28} />
+            </button>
+          </div>
+
+          {/* Tab 4: Calculadora */}
           <button
-            onClick={() => setView('PLANNING')}
-            className={`flex flex-col items-center justify-center gap-1 ${view === 'PLANNING' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+            onClick={() => setIsCalculatorOpen(true)}
+            className={`flex flex-col items-center justify-center gap-1 transition-colors ${isCalculatorOpen ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
-            <FileText size={20} />
-            <span className="text-[10px] font-medium">Docs</span>
+            <Calculator size={22} />
+            <span className="text-[10px] font-bold">Cálculo</span>
           </button>
 
+          {/* Tab 5: Ajustes */}
           <button
             onClick={() => setView('SETTINGS')}
-            className={`flex flex-col items-center justify-center gap-1 ${view === 'SETTINGS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
+            className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'SETTINGS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
           >
-            <Settings size={20} />
-            <span className="text-[10px] font-medium">Ajustes</span>
+            <Settings size={22} />
+            <span className="text-[10px] font-bold">Ajustes</span>
           </button>
         </div>
       </nav>
@@ -1307,20 +1354,21 @@ const App: React.FC = () => {
         initialData={editingTransaction}
         defaultType={defaultFormType}
       />
-      <FloatingCalculator />
+      <FloatingCalculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
 
       <ConfirmationModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmModal.onConfirm}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        isDestructive={confirmModal.isDestructive}
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        isDestructive={confirmDialog.isDestructive}
       />
 
       <AIAssistantModal
         isOpen={isAIModalOpen}
         onClose={() => setIsAIModalOpen(false)}
+        transactions={transactions}
         categories={categories}
         accounts={accounts}
         onExecuteContext={handleAIExecute}

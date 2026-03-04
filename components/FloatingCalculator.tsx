@@ -1,170 +1,118 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Calculator, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { X, Calculator } from 'lucide-react';
 
-type Operator = '+' | '-' | '×' | '÷';
+interface FloatingCalculatorProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
-const operatorSymbols: Record<string, Operator> = {
-  '+': '+',
-  '-': '-',
-  '*': '×',
-  x: '×',
-  X: '×',
-  '/': '÷',
-};
-
-const formatResult = (value: number): string => {
-  if (!Number.isFinite(value)) {
-    return 'Error';
-  }
-  const trimmed = value.toFixed(10).replace(/\.0+$|(?<=\.[0-9]*[1-9])0+$/g, '');
-  return trimmed.length ? trimmed : '0';
-};
-
-const FloatingCalculator: React.FC = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [display, setDisplay] = useState('0');
-  const [pendingOperator, setPendingOperator] = useState<Operator | null>(null);
+const FloatingCalculator: React.FC<FloatingCalculatorProps> = ({ isOpen, onClose }) => {
+  const [displayValue, setDisplayValue] = useState('0');
   const [storedValue, setStoredValue] = useState<number | null>(null);
-  const [shouldResetDisplay, setShouldResetDisplay] = useState(false);
+  const [pendingOperator, setPendingOperator] = useState<string | null>(null);
+  const [waitingForNewValue, setWaitingForNewValue] = useState(false);
 
-  const resetAll = useCallback(() => {
-    setDisplay('0');
-    setPendingOperator(null);
-    setStoredValue(null);
-    setShouldResetDisplay(false);
-  }, []);
+  // Format number for display
+  const formatResult = (num: number): string => {
+    return new Intl.NumberFormat('es-MX', {
+      maximumFractionDigits: 8,
+    }).format(num);
+  };
 
   const inputDigit = useCallback(
     (digit: string) => {
-      setDisplay((prev) => {
-        if (prev === 'Error' || shouldResetDisplay || prev === '0') {
-          setShouldResetDisplay(false);
-          return digit;
-        }
-        return prev + digit;
-      });
+      if (waitingForNewValue) {
+        setDisplayValue(digit);
+        setWaitingForNewValue(false);
+      } else {
+        setDisplayValue(displayValue === '0' ? digit : displayValue + digit);
+      }
     },
-    [shouldResetDisplay]
+    [displayValue, waitingForNewValue]
   );
 
   const inputDecimal = useCallback(() => {
-    setDisplay((prev) => {
-      if (prev === 'Error' || shouldResetDisplay) {
-        setShouldResetDisplay(false);
-        return '0.';
-      }
-      if (prev.includes('.')) {
-        return prev;
-      }
-      return `${prev}.`;
-    });
-  }, [shouldResetDisplay]);
+    if (waitingForNewValue) {
+      setDisplayValue('0.');
+      setWaitingForNewValue(false);
+    } else if (!displayValue.includes('.')) {
+      setDisplayValue(displayValue + '.');
+    }
+  }, [displayValue, waitingForNewValue]);
+
+  const resetAll = useCallback(() => {
+    setDisplayValue('0');
+    setStoredValue(null);
+    setPendingOperator(null);
+    setWaitingForNewValue(false);
+  }, []);
 
   const removeLast = useCallback(() => {
-    setDisplay((prev) => {
-      if (prev === 'Error') {
-        resetAll();
-        return '0';
-      }
-      if (shouldResetDisplay) {
-        setShouldResetDisplay(false);
-        return '0';
-      }
-      if (prev.length <= 1) {
-        return '0';
-      }
-      return prev.slice(0, -1);
-    });
-  }, [resetAll, shouldResetDisplay]);
+    if (displayValue.length > 1) {
+      setDisplayValue(displayValue.slice(0, -1));
+    } else {
+      setDisplayValue('0');
+    }
+  }, [displayValue]);
 
-  const performOperation = useCallback(
-    (first: number, second: number, operator: Operator): number | 'Error' => {
-      switch (operator) {
+  const performCalculation = useCallback(
+    (nextValue: number) => {
+      if (storedValue === null || pendingOperator === null) return nextValue;
+
+      switch (pendingOperator) {
         case '+':
-          return first + second;
+          return storedValue + nextValue;
         case '-':
-          return first - second;
+          return storedValue - nextValue;
         case '×':
-          return first * second;
+          return storedValue * nextValue;
         case '÷':
-          if (second === 0) {
-            return 'Error';
-          }
-          return first / second;
+          return nextValue !== 0 ? storedValue / nextValue : 0;
         default:
-          return second;
+          return nextValue;
       }
     },
-    []
-  );
-
-  const commitCalculation = useCallback(
-    (nextOperator: Operator | null) => {
-      const currentValue = display === 'Error' ? 0 : parseFloat(display);
-
-      if (storedValue === null || pendingOperator === null) {
-        setStoredValue(currentValue);
-        setPendingOperator(nextOperator);
-        setShouldResetDisplay(true);
-        return;
-      }
-
-      const result = performOperation(storedValue, currentValue, pendingOperator);
-      if (result === 'Error') {
-        setDisplay('Error');
-        setStoredValue(null);
-        setPendingOperator(null);
-        setShouldResetDisplay(true);
-        return;
-      }
-
-      setDisplay(formatResult(result));
-      setStoredValue(result);
-      setPendingOperator(nextOperator);
-      setShouldResetDisplay(true);
-    },
-    [display, pendingOperator, performOperation, storedValue]
+    [pendingOperator, storedValue]
   );
 
   const handleOperator = useCallback(
-    (operator: Operator) => {
-      if (display === 'Error') {
-        resetAll();
-        return;
+    (operator: string) => {
+      const nextValue = parseFloat(displayValue);
+
+      if (storedValue === null) {
+        setStoredValue(nextValue);
+      } else if (pendingOperator) {
+        const result = performCalculation(nextValue);
+        setStoredValue(result);
+        setDisplayValue(String(result));
       }
 
-      if (shouldResetDisplay) {
-        setPendingOperator(operator);
-        return;
-      }
-
-      commitCalculation(operator);
+      setWaitingForNewValue(true);
+      setPendingOperator(operator);
     },
-    [commitCalculation, display, resetAll, shouldResetDisplay]
+    [displayValue, pendingOperator, performCalculation, storedValue]
   );
 
   const evaluateResult = useCallback(() => {
-    if (display === 'Error') {
-      resetAll();
-      return;
+    const nextValue = parseFloat(displayValue);
+
+    if (pendingOperator && storedValue !== null) {
+      const result = performCalculation(nextValue);
+      setDisplayValue(String(result));
+      setStoredValue(null);
+      setPendingOperator(null);
+      setWaitingForNewValue(true);
     }
+  }, [displayValue, pendingOperator, performCalculation, storedValue]);
 
-    if (pendingOperator === null || storedValue === null) {
-      return;
-    }
-
-    commitCalculation(null);
-  }, [commitCalculation, display, pendingOperator, resetAll, storedValue]);
-
+  // Keyboard support
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
+    if (!isOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       const { key } = event;
 
-      if (/^[0-9]$/.test(key)) {
+      if (/[0-9]/.test(key)) {
         event.preventDefault();
         inputDigit(key);
         return;
@@ -175,6 +123,13 @@ const FloatingCalculator: React.FC = () => {
         inputDecimal();
         return;
       }
+
+      const operatorSymbols: Record<string, string> = {
+        '+': '+',
+        '-': '-',
+        '*': '×',
+        '/': '÷',
+      };
 
       if (key in operatorSymbols) {
         event.preventDefault();
@@ -196,13 +151,13 @@ const FloatingCalculator: React.FC = () => {
 
       if (key === 'Escape') {
         event.preventDefault();
-        resetAll();
+        onClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [evaluateResult, handleOperator, inputDecimal, inputDigit, isOpen, removeLast, resetAll]);
+  }, [isOpen, onClose, inputDigit, inputDecimal, handleOperator, evaluateResult, removeLast]);
 
   const buttons = useMemo(
     () => [
@@ -225,54 +180,58 @@ const FloatingCalculator: React.FC = () => {
       { label: '.', action: inputDecimal },
       { label: '=', action: evaluateResult, tone: 'accent' as const },
     ],
-    [evaluateResult, handleOperator, inputDecimal, inputDigit, removeLast, resetAll]
+    [resetAll, removeLast, handleOperator, inputDigit, inputDecimal, evaluateResult]
   );
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed bottom-36 sm:bottom-44 right-4 sm:right-6 md:right-12 z-[70] flex flex-col items-end gap-3 pointer-events-none">
-      <div
-        className={[
-          'w-[min(calc(100vw-2rem),18rem)] sm:w-72 rounded-2xl border backdrop-blur-lg shadow-xl transition-all duration-200 ease-out origin-bottom-right',
-          'bg-white/75 border-white/40 dark:bg-slate-900/80 dark:border-slate-600/60',
-          'p-4 space-y-4',
-          isOpen
-            ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto'
-            : 'opacity-0 translate-y-2 scale-95 pointer-events-none',
-        ].join(' ')}
-        aria-hidden={!isOpen}
-      >
-        <div className="flex items-center justify-between">
-          <span className="text-xs uppercase tracking-widest text-slate-500 dark:text-slate-400">
-            Calculadora
-          </span>
-          {pendingOperator && storedValue !== null && (
-            <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-              {formatResult(storedValue)} {pendingOperator}
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center p-4 animate-fade-in backdrop-blur-sm bg-black/5 dark:bg-black/20 pointer-events-auto">
+      <div className="absolute inset-0 cursor-pointer" onClick={onClose} />
+
+      <div className="relative w-full max-w-[320px] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in slide-in-from-bottom-5 duration-300">
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calculator size={18} className="text-primary-600" />
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
+              Calculadora
             </span>
-          )}
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors"
+          >
+            <X size={20} />
+          </button>
         </div>
-        <div className="flex items-end justify-end">
-          <span className="text-3xl font-semibold text-slate-900 dark:text-slate-100 tabular-nums break-all">
-            {display}
-          </span>
+
+        <div className="p-6 bg-slate-50/50 dark:bg-slate-950/20">
+          <div className="text-right text-xs text-slate-400 min-h-[1rem] font-medium mb-1 truncate">
+            {pendingOperator && storedValue !== null
+              ? `${formatResult(storedValue)} ${pendingOperator}`
+              : ''}
+          </div>
+          <div className="text-right text-4xl font-black tracking-tight text-slate-800 dark:text-white truncate">
+            {displayValue}
+          </div>
         </div>
-        <div className="grid grid-cols-4 gap-3">
+
+        <div className="grid grid-cols-4 gap-2.5 p-5">
           {buttons.map(({ label, action, tone, span }, idx) => (
             <button
               key={`${label}-${idx}`}
               type="button"
               onClick={action}
               className={[
-                'rounded-full py-3 text-lg font-semibold transition-colors duration-150 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
-                'backdrop-blur-sm',
-                span === 2 ? 'col-span-2' : '',
+                'h-14 text-xl font-bold rounded-2xl transition-all active:scale-90 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
+                span === 2 ? 'col-span-2' : 'col-span-1',
                 tone === 'accent'
-                  ? 'bg-primary-600 hover:bg-primary-500 text-white focus-visible:ring-primary-400'
+                  ? 'bg-primary-600 hover:bg-primary-500 text-white shadow-md shadow-primary-500/20'
                   : tone === 'danger'
-                    ? 'bg-rose-100/80 text-rose-600 hover:bg-rose-200/80 dark:bg-rose-900/40 dark:text-rose-300 dark:hover:bg-rose-900/60 focus-visible:ring-rose-300'
+                    ? 'bg-rose-100 text-rose-600 hover:bg-rose-200 dark:bg-rose-900/40 dark:text-rose-300'
                     : tone === 'muted'
-                      ? 'bg-slate-200/70 text-slate-700 hover:bg-slate-200 dark:bg-slate-700/70 dark:text-slate-200 dark:hover:bg-slate-600/70 focus-visible:ring-slate-400'
-                      : 'bg-slate-100/70 text-slate-800 hover:bg-slate-200 dark:bg-slate-800/70 dark:text-slate-100 dark:hover:bg-slate-700/70 focus-visible:ring-slate-500',
+                      ? 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'
+                      : 'bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200',
               ].join(' ')}
             >
               {label}
@@ -280,15 +239,6 @@ const FloatingCalculator: React.FC = () => {
           ))}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="w-14 h-14 rounded-full bg-primary-600 hover:bg-primary-500 text-white shadow-lg shadow-primary-500/30 flex items-center justify-center transition-transform duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary-400 pointer-events-auto"
-        aria-label={isOpen ? 'Cerrar calculadora' : 'Abrir calculadora'}
-      >
-        {isOpen ? <X size={24} /> : <Calculator size={24} />}
-      </button>
     </div>
   );
 };
