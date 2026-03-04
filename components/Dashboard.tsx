@@ -1,13 +1,12 @@
 import React, { useMemo } from 'react';
 import { Transaction, TransactionType, Category, DateFilter } from '../types';
-import { calculateTotals, formatCurrency } from '../utils';
+import { calculateTotals, formatCurrency, formatCurrencyCompact } from '../utils';
 import {
   ArrowUpCircle,
   ArrowDownCircle,
   Wallet,
   CalendarClock,
   Receipt,
-  ArrowRight,
   Edit2,
   Trash2,
 } from 'lucide-react';
@@ -56,15 +55,16 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ t, category, onEdit, on
       </div>
 
       {/* Acciones y Monto (Derecha) */}
-      <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto pl-12 sm:pl-0">
+      <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto pl-12 sm:pl-0">
         <span
-          className={`font-semibold text-sm whitespace-nowrap ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}
+          className={`font-semibold text-sm truncate max-w-[130px] sm:max-w-none ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}
+          title={formatCurrency(t.amount)}
         >
           {isIncome ? '+' : '-'}
           {formatCurrency(t.amount)}
         </span>
 
-        <div className="flex items-center gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 flex-shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           <button
             type="button"
             onClick={(e) => {
@@ -72,10 +72,11 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ t, category, onEdit, on
               e.stopPropagation();
               onEdit(t);
             }}
-            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full transition-all cursor-pointer"
+            className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-full transition-all cursor-pointer"
             title="Editar"
           >
-            <Edit2 size={16} className="pointer-events-none" />
+            <Edit2 size={14} className="pointer-events-none sm:hidden" />
+            <Edit2 size={16} className="pointer-events-none hidden sm:block" />
           </button>
           <button
             type="button"
@@ -84,10 +85,11 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ t, category, onEdit, on
               e.stopPropagation();
               onDelete(t.id);
             }}
-            className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-full transition-all cursor-pointer"
+            className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-full transition-all cursor-pointer"
             title="Eliminar"
           >
-            <Trash2 size={16} className="pointer-events-none" />
+            <Trash2 size={14} className="pointer-events-none sm:hidden" />
+            <Trash2 size={16} className="pointer-events-none hidden sm:block" />
           </button>
         </div>
       </div>
@@ -137,10 +139,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     <div className="space-y-6 animate-fade-in">
       {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="bg-white dark:bg-slate-800 p-3 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
-          <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
-            <div className="p-1.5 sm:p-2 bg-blue-50 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400">
-              <Wallet size={16} className="sm:hidden" />
+        {/* Balance Card */}
+        <div className="bg-white dark:bg-slate-800 p-2.5 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between overflow-hidden">
+          <div className="flex items-center gap-1.5 sm:gap-3 mb-1 sm:mb-2">
+            <div className="p-1 sm:p-2 bg-blue-50 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400 flex-shrink-0">
+              <Wallet size={14} className="sm:hidden" />
               <Wallet size={24} className="hidden sm:block" />
             </div>
             <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
@@ -148,45 +151,57 @@ const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <span
-            className={`text-base sm:text-2xl md:text-3xl font-bold ${balance >= 0 ? 'text-slate-800 dark:text-white' : 'text-red-500'}`}
+            className={`text-sm sm:text-2xl md:text-3xl font-bold truncate block ${balance >= 0 ? 'text-slate-800 dark:text-white' : 'text-red-500'}`}
+            title={formatCurrency(balance)}
           >
-            {formatCurrency(balance)}
+            <span className="sm:hidden">{formatCurrencyCompact(balance)}</span>
+            <span className="hidden sm:inline">{formatCurrency(balance)}</span>
           </span>
           <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
             Balance
           </span>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-3 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
-          <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
-            <div className="p-1.5 sm:p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-600 dark:text-emerald-400">
-              <ArrowUpCircle size={16} className="sm:hidden" />
+        {/* Income Card */}
+        <div className="bg-white dark:bg-slate-800 p-2.5 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between overflow-hidden">
+          <div className="flex items-center gap-1.5 sm:gap-3 mb-1 sm:mb-2">
+            <div className="p-1 sm:p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+              <ArrowUpCircle size={14} className="sm:hidden" />
               <ArrowUpCircle size={24} className="hidden sm:block" />
             </div>
             <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
               Ingresos
             </span>
           </div>
-          <span className="text-base sm:text-2xl md:text-3xl font-bold text-emerald-600 dark:text-emerald-400">
-            {formatCurrency(income)}
+          <span
+            className="text-sm sm:text-2xl md:text-3xl font-bold text-emerald-600 dark:text-emerald-400 truncate block"
+            title={formatCurrency(income)}
+          >
+            <span className="sm:hidden">{formatCurrencyCompact(income)}</span>
+            <span className="hidden sm:inline">{formatCurrency(income)}</span>
           </span>
           <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
             Ingresos
           </span>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-3 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
-          <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
-            <div className="p-1.5 sm:p-2 bg-rose-50 dark:bg-rose-900/30 rounded-full text-rose-600 dark:text-rose-400">
-              <ArrowDownCircle size={16} className="sm:hidden" />
+        {/* Expense Card */}
+        <div className="bg-white dark:bg-slate-800 p-2.5 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between overflow-hidden">
+          <div className="flex items-center gap-1.5 sm:gap-3 mb-1 sm:mb-2">
+            <div className="p-1 sm:p-2 bg-rose-50 dark:bg-rose-900/30 rounded-full text-rose-600 dark:text-rose-400 flex-shrink-0">
+              <ArrowDownCircle size={14} className="sm:hidden" />
               <ArrowDownCircle size={24} className="hidden sm:block" />
             </div>
             <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
               Gastos
             </span>
           </div>
-          <span className="text-base sm:text-2xl md:text-3xl font-bold text-rose-600 dark:text-rose-400">
-            {formatCurrency(expense)}
+          <span
+            className="text-sm sm:text-2xl md:text-3xl font-bold text-rose-600 dark:text-rose-400 truncate block"
+            title={formatCurrency(expense)}
+          >
+            <span className="sm:hidden">{formatCurrencyCompact(expense)}</span>
+            <span className="hidden sm:inline">{formatCurrency(expense)}</span>
           </span>
           <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
             Gastos
@@ -195,32 +210,42 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Detail Sections: Fixed vs Variable */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Fixed / Recurring Section */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-full">
-          <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <CalendarClock className="text-amber-500" size={20} />
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200">
+          <div className="p-3 sm:p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <CalendarClock className="text-amber-500 flex-shrink-0" size={18} />
+              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm sm:text-base truncate">
                 Fijos y Recurrentes
               </h3>
             </div>
-            <div className="text-xs font-medium px-2 py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/30">
+            <div className="text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/30 flex-shrink-0 whitespace-nowrap">
               Comprometido
             </div>
           </div>
 
-          <div className="px-5 py-4 grid grid-cols-2 gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Ingresos Fijos</p>
-              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                {formatCurrency(fixedStats.income)}
+          <div className="px-3 sm:px-5 py-2.5 sm:py-4 grid grid-cols-2 gap-2 sm:gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div className="min-w-0">
+              <p className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider mb-0.5">
+                Ingresos Fijos
+              </p>
+              <p
+                className="text-xs sm:text-lg font-bold text-emerald-600 dark:text-emerald-400 truncate"
+                title={formatCurrency(fixedStats.income)}
+              >
+                {formatCurrencyCompact(fixedStats.income)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Gastos Fijos</p>
-              <p className="text-lg font-bold text-rose-600 dark:text-rose-400">
-                {formatCurrency(fixedStats.expense)}
+            <div className="text-right min-w-0">
+              <p className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider mb-0.5">
+                Gastos Fijos
+              </p>
+              <p
+                className="text-xs sm:text-lg font-bold text-rose-600 dark:text-rose-400 truncate"
+                title={formatCurrency(fixedStats.expense)}
+              >
+                {formatCurrencyCompact(fixedStats.expense)}
               </p>
             </div>
           </div>
@@ -249,33 +274,39 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Variable / Normal Section */}
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-full">
-          <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <Receipt className="text-indigo-500" size={20} />
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200">
+          <div className="p-3 sm:p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Receipt className="text-indigo-500 flex-shrink-0" size={18} />
+              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm sm:text-base truncate">
                 Variables y Diarios
               </h3>
             </div>
-            <div className="text-xs font-medium px-2 py-1 rounded bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/30">
+            <div className="text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/30 flex-shrink-0 whitespace-nowrap">
               Actividad
             </div>
           </div>
 
-          <div className="px-5 py-4 grid grid-cols-2 gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">
+          <div className="px-3 sm:px-5 py-2.5 sm:py-4 grid grid-cols-2 gap-2 sm:gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+            <div className="min-w-0">
+              <p className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider mb-0.5">
                 Ingresos Extras
               </p>
-              <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                {formatCurrency(variableStats.income)}
+              <p
+                className="text-xs sm:text-lg font-bold text-emerald-600 dark:text-emerald-400 truncate"
+                title={formatCurrency(variableStats.income)}
+              >
+                {formatCurrencyCompact(variableStats.income)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">
+            <div className="text-right min-w-0">
+              <p className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider mb-0.5">
                 Gastos Variables
               </p>
-              <p className="text-lg font-bold text-rose-600 dark:text-rose-400">
-                {formatCurrency(variableStats.expense)}
+              <p
+                className="text-xs sm:text-lg font-bold text-rose-600 dark:text-rose-400 truncate"
+                title={formatCurrency(variableStats.expense)}
+              >
+                {formatCurrencyCompact(variableStats.expense)}
               </p>
             </div>
           </div>

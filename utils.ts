@@ -4,6 +4,41 @@ export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('es-MX', {
     style: 'currency',
     currency: 'MXN',
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+};
+
+/**
+ * Compact currency formatter for mobile/tight spaces.
+ * - $1,234 → "$1,234"
+ * - $12,345 → "$12.3K"  (above 10K)
+ * - $123,456 → "$123K"
+ * - $1,234,567 → "$1.2M"
+ * - Negative numbers get a "−" prefix
+ */
+export const formatCurrencyCompact = (amount: number): string => {
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+
+  if (abs >= 1_000_000) {
+    const millions = abs / 1_000_000;
+    return `${sign}$${millions >= 10 ? Math.round(millions) : millions.toFixed(1)}M`;
+  }
+  if (abs >= 100_000) {
+    return `${sign}$${Math.round(abs / 1_000)}K`;
+  }
+  if (abs >= 10_000) {
+    const thousands = abs / 1_000;
+    return `${sign}$${thousands >= 100 ? Math.round(thousands) : thousands.toFixed(1)}K`;
+  }
+
+  // Below 10K: show full number without unnecessary decimals
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    minimumFractionDigits: abs % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   }).format(amount);
 };
 

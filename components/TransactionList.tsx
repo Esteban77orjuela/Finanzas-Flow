@@ -34,7 +34,7 @@ const TransactionList: React.FC<TransactionListProps> = ({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2 sm:space-y-3">
       {sorted.map((t) => {
         const category = categories.find((c) => c.id === t.categoryId);
         const isIncome = t.type === TransactionType.INCOME;
@@ -42,11 +42,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
         return (
           <div
             key={t.id}
-            className="group flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-all gap-4 sm:gap-0"
+            className="group flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-all gap-3 sm:gap-0"
           >
-            <div className="flex items-center gap-4 min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div
-                className={`w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-lg shadow-sm
+                className={`w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-full flex items-center justify-center text-base sm:text-lg shadow-sm
                   ${isIncome ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20'}`}
                 style={
                   category?.color
@@ -54,18 +54,17 @@ const TransactionList: React.FC<TransactionListProps> = ({
                     : {}
                 }
               >
-                {/* Fallback icon logic would go here, using emoji for simplicity now */}
                 {isIncome ? '💰' : '🏷️'}
               </div>
 
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2 truncate">
+                <p className="font-semibold text-sm sm:text-base text-slate-800 dark:text-slate-100 flex items-center gap-2 truncate">
                   <span className="truncate">{category?.name || 'Sin Categoría'}</span>
                   {t.isRecurring && <Repeat size={12} className="text-slate-400 flex-shrink-0" />}
                 </p>
                 <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   <span className="whitespace-nowrap">
-                    {new Date(t.date).toLocaleDateString('es-MX', {
+                    {new Date(t.date + 'T00:00:00').toLocaleDateString('es-MX', {
                       day: 'numeric',
                       month: 'short',
                     })}
@@ -73,41 +72,44 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   {t.note && (
                     <>
                       <span className="text-slate-300 dark:text-slate-600">•</span>
-                      <span className="truncate max-w-[120px] sm:max-w-xs">{t.note}</span>
+                      <span className="truncate max-w-[100px] sm:max-w-xs">{t.note}</span>
                     </>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto pl-16 sm:pl-0">
+            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto pl-[52px] sm:pl-0">
               <span
-                className={`font-bold text-base whitespace-nowrap ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}
+                className={`font-bold text-sm sm:text-base truncate max-w-[140px] sm:max-w-none ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}
+                title={formatCurrency(t.amount)}
               >
                 {isIncome ? '+' : '-'}
                 {formatCurrency(t.amount)}
               </span>
 
-              <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+              <div className="flex gap-0.5 sm:gap-1 flex-shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     onEdit(t);
                   }}
-                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
                   title="Editar"
                 >
-                  <Edit2 size={16} />
+                  <Edit2 size={14} className="sm:hidden" />
+                  <Edit2 size={16} className="hidden sm:block" />
                 </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     onDelete(t.id);
                   }}
-                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"
                   title="Eliminar"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} className="sm:hidden" />
+                  <Trash2 size={16} className="hidden sm:block" />
                 </button>
               </div>
             </div>
