@@ -1127,8 +1127,8 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
             {session?.user?.email && (
-              <span className="hidden lg:block text-xs text-slate-500 font-medium truncate max-w-[120px] mr-1">
-                {session.user.email}
+              <span className="hidden xs:block text-[10px] sm:text-xs text-slate-500 font-medium truncate max-w-[80px] sm:max-w-[150px] mr-1">
+                {session.user.email.split('@')[0]}
               </span>
             )}
             <button
@@ -1243,7 +1243,23 @@ const App: React.FC = () => {
         )}
 
         {view === 'SETTINGS' && (
-          <div className="animate-fade-in pb-20 space-y-6">
+          <div className="animate-fade-in pb-20 space-y-4">
+            {/* User Profile Info */}
+            <div className="bg-gradient-to-br from-primary-600 to-indigo-700 p-4 rounded-xl shadow-lg text-white mb-2">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-xl font-bold">
+                  {session?.user?.email?.[0].toUpperCase() || 'U'}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-widest opacity-70 font-bold">
+                    Perfil Activo
+                  </p>
+                  <p className="text-sm font-bold truncate">{session?.user?.email}</p>
+                  <p className="text-[10px] opacity-80 mt-0.5">Sincronización en la nube activa</p>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400">
