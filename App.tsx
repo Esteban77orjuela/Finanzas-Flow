@@ -11,7 +11,12 @@ import {
   RecurrenceRule,
   Frequency,
 } from './types';
-import { generateId, filterTransactions, generateMissingRecurringTransactions } from './utils';
+import {
+  generateId,
+  filterTransactions,
+  generateMissingRecurringTransactions,
+  roundToTwo,
+} from './utils';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
@@ -834,9 +839,11 @@ const App: React.FC = () => {
       if (transactionsToSync.length > 0) {
         const accountId = transactionsToSync[0].accountId;
         const accountTransactions = newTransactions.filter((tx) => tx.accountId === accountId);
-        const newBalance = accountTransactions.reduce((acc, tx) => {
-          return tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount;
-        }, 0);
+        const newBalance = roundToTwo(
+          accountTransactions.reduce((acc, tx) => {
+            return tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount;
+          }, 0)
+        );
         await supabase
           .from('accounts')
           .update({ balance: newBalance })
@@ -868,9 +875,11 @@ const App: React.FC = () => {
 
     // Update Balance
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-    const newBalance = accountTransactions.reduce(
-      (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
-      0
+    const newBalance = roundToTwo(
+      accountTransactions.reduce(
+        (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
+        0
+      )
     );
     await supabase
       .from('accounts')
@@ -907,9 +916,11 @@ const App: React.FC = () => {
 
     // Update Balance
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-    const newBalance = accountTransactions.reduce(
-      (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
-      0
+    const newBalance = roundToTwo(
+      accountTransactions.reduce(
+        (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
+        0
+      )
     );
     await supabase
       .from('accounts')
@@ -943,9 +954,11 @@ const App: React.FC = () => {
 
         // Update Balance
         const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-        const newBalance = accountTransactions.reduce(
-          (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
-          0
+        const newBalance = roundToTwo(
+          accountTransactions.reduce(
+            (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
+            0
+          )
         );
         await supabase
           .from('accounts')
@@ -1084,29 +1097,57 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
       {/* Top Navigation Bar */}
       <header className="fixed top-0 w-full z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-primary-500/30">
+        {/* Row 1: Logo, AI Button, Actions */}
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 h-12 sm:h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-primary-500/30 flex-shrink-0">
               F
             </div>
-            <span className="font-bold text-xl tracking-tight hidden sm:block">FinanzaFlow</span>
+            <span className="font-bold text-lg tracking-tight hidden sm:block">FinanzaFlow</span>
 
             <button
               onClick={() => setIsAIModalOpen(true)}
-              className="ml-4 px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-bold rounded-full shadow-lg shadow-indigo-500/30 flex items-center gap-1 hover:brightness-110 transition-all animate-pulse"
+              className="ml-1 sm:ml-3 px-2 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[10px] sm:text-xs font-bold rounded-full shadow-lg shadow-indigo-500/30 flex items-center gap-1 hover:brightness-110 transition-all animate-pulse flex-shrink-0"
             >
-              <Sparkles size={14} className="text-yellow-300" /> Asistente IA
+              <Sparkles size={12} className="text-yellow-300" />
+              <span className="hidden xs:inline">Asistente</span>
+              <span className="hidden sm:inline"> IA</span>
             </button>
           </div>
 
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+          <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
+            {session?.user?.email && (
+              <span className="hidden lg:block text-xs text-slate-500 font-medium truncate max-w-[120px] mr-1">
+                {session.user.email}
+              </span>
+            )}
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-1.5 sm:p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              title={darkMode ? 'Modo Claro' : 'Modo Oscuro'}
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 sm:p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
+              title="Cerrar Sesión"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: Month Navigator (always visible, compact) */}
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 h-10 flex items-center justify-center border-t border-slate-100 dark:border-slate-800/50">
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 sm:p-1">
             <button
               onClick={() => changeMonth(-1)}
               className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="px-3 text-sm font-medium capitalize w-32 text-center select-none">
+            <span className="px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize w-28 sm:w-32 text-center select-none">
               {monthName}
             </span>
             <button
@@ -1116,35 +1157,14 @@ const App: React.FC = () => {
               <ChevronRight size={16} />
             </button>
           </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors"
-            >
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
-            {session?.user?.email && (
-              <span className="hidden md:block text-xs text-slate-500 font-medium truncate max-w-[150px]">
-                {session.user.email}
-              </span>
-            )}
-            <button
-              onClick={handleLogout}
-              className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
-              title="Cerrar Sesión"
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 pt-24 pb-24">
+      <main className="max-w-5xl mx-auto px-3 sm:px-4 pt-[5.5rem] sm:pt-[6.5rem] pb-24">
         {/* Period Filter Tabs */}
         {(view === 'DASHBOARD' || view === 'TRANSACTIONS') && (
-          <div className="flex justify-center mb-8">
+          <div className="flex justify-center mb-4 sm:mb-8">
             <div className="bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex max-w-full overflow-x-auto custom-scrollbar">
               <button
                 onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q1 }))}
@@ -1233,9 +1253,9 @@ const App: React.FC = () => {
           setEditingTransaction(null);
           setIsModalOpen(true);
         }}
-        className="fixed bottom-24 right-6 md:right-12 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg shadow-primary-600/40 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 z-40"
+        className="fixed bottom-20 right-4 sm:right-6 md:right-12 w-12 h-12 sm:w-14 sm:h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg shadow-primary-600/40 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 z-40"
       >
-        <Plus size={28} />
+        <Plus size={24} />
       </button>
 
       {/* Bottom Navigation */}

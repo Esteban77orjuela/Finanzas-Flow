@@ -135,11 +135,15 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !categoryId || !accountId) return;
+    const amountNum = parseFloat(amount || '0');
+    if (amountNum <= 0 || !categoryId || !accountId) {
+      alert('Por favor, ingresa un monto válido y selecciona una categoría.');
+      return;
+    }
 
     const transaction: Transaction = {
       id: initialData ? initialData.id : generateId(),
-      amount: parseFloat(amount),
+      amount: amountNum,
       type,
       date,
       categoryId,

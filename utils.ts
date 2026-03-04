@@ -7,14 +7,22 @@ export const formatCurrency = (amount: number): string => {
   }).format(amount);
 };
 
+// Rounds to 2 decimal places to avoid floating point issues (e.g. 0.1 + 0.2 = 0.300000004)
+export const roundToTwo = (num: number): number => {
+  return Math.round((num + Number.EPSILON) * 100) / 100;
+};
+
 export const getQuincena = (dateStr: string): PeriodType => {
   const day = new Date(dateStr + 'T00:00:00').getDate();
   return day <= 15 ? PeriodType.Q1 : PeriodType.Q2;
 };
 
-// Generates a unique ID
+// Generates a unique ID using crypto.randomUUID() if available, otherwise falls back to a robust random string
 export const generateId = (): string => {
-  return Math.random().toString(36).substr(2, 9);
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 11) + Math.random().toString(36).substring(2, 11);
 };
 
 export const filterTransactions = (
@@ -46,7 +54,11 @@ export const calculateTotals = (transactions: Transaction[]) => {
     .filter((t) => t.type === TransactionType.EXPENSE)
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  return { income, expense, balance: income - expense };
+  return {
+    income: roundToTwo(income),
+    expense: roundToTwo(expense),
+    balance: roundToTwo(income - expense),
+  };
 };
 
 /**
@@ -118,7 +130,7 @@ export const generateMissingRecurringTransactions = (
       if (!exists && !isException) {
         newTransactions.push({
           id: generateId(),
-          amount: rule.amount,
+          amount: roundToTwo(rule.amount), // Ensuring rounded amount on generation
           type: rule.type,
           categoryId: rule.categoryId,
           accountId: rule.accountId,

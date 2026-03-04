@@ -136,48 +136,60 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400">
-              <Wallet size={24} />
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="bg-white dark:bg-slate-800 p-3 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+            <div className="p-1.5 sm:p-2 bg-blue-50 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400">
+              <Wallet size={16} className="sm:hidden" />
+              <Wallet size={24} className="hidden sm:block" />
             </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">
-              Balance Total
+            <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
+              Balance
             </span>
           </div>
           <span
-            className={`text-3xl font-bold ${balance >= 0 ? 'text-slate-800 dark:text-white' : 'text-red-500'}`}
+            className={`text-base sm:text-2xl md:text-3xl font-bold ${balance >= 0 ? 'text-slate-800 dark:text-white' : 'text-red-500'}`}
           >
             {formatCurrency(balance)}
           </span>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-600 dark:text-emerald-400">
-              <ArrowUpCircle size={24} />
-            </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">
-              Ingresos
-            </span>
-          </div>
-          <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
-            {formatCurrency(income)}
+          <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
+            Balance
           </span>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-rose-50 dark:bg-rose-900/30 rounded-full text-rose-600 dark:text-rose-400">
-              <ArrowDownCircle size={24} />
+        <div className="bg-white dark:bg-slate-800 p-3 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+            <div className="p-1.5 sm:p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-600 dark:text-emerald-400">
+              <ArrowUpCircle size={16} className="sm:hidden" />
+              <ArrowUpCircle size={24} className="hidden sm:block" />
             </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-sm uppercase tracking-wide">
+            <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
+              Ingresos
+            </span>
+          </div>
+          <span className="text-base sm:text-2xl md:text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+            {formatCurrency(income)}
+          </span>
+          <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
+            Ingresos
+          </span>
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 p-3 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 mb-1 sm:mb-2">
+            <div className="p-1.5 sm:p-2 bg-rose-50 dark:bg-rose-900/30 rounded-full text-rose-600 dark:text-rose-400">
+              <ArrowDownCircle size={16} className="sm:hidden" />
+              <ArrowDownCircle size={24} className="hidden sm:block" />
+            </div>
+            <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
               Gastos
             </span>
           </div>
-          <span className="text-3xl font-bold text-rose-600 dark:text-rose-400">
+          <span className="text-base sm:text-2xl md:text-3xl font-bold text-rose-600 dark:text-rose-400">
             {formatCurrency(expense)}
+          </span>
+          <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
+            Gastos
           </span>
         </div>
       </div>
