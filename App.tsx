@@ -145,6 +145,7 @@ const App: React.FC = () => {
   // Auth State
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isRecovering, setIsRecovering] = useState(false);
 
   // Listen for auth changes
   useEffect(() => {
@@ -157,7 +158,11 @@ const App: React.FC = () => {
     // Listen for changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[FinanzaFlow] Auth Event:', event);
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecovering(true);
+      }
       setSession(session);
     });
 
@@ -1051,8 +1056,13 @@ const App: React.FC = () => {
     );
   }
 
-  if (!session) {
-    return <AuthPage />;
+  if (!session || isRecovering) {
+    return (
+      <AuthPage
+        initialMode={isRecovering ? 'reset' : 'login'}
+        onFinishRecovery={() => setIsRecovering(false)}
+      />
+    );
   }
 
   // SI HAY UN ERROR CRÍTICO AL INICIAR
