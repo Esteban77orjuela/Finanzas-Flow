@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  setDoc, 
+  deleteDoc, 
+  updateDoc, 
+  query, 
+  where,
+  writeBatch
+} from 'firebase/firestore';
+import { auth, db } from './firebaseClient';
 import {
   Transaction,
   Category,
@@ -43,10 +55,9 @@ import {
 import ConfirmationModal from './components/ConfirmationModal';
 import CategoryFormModal from './components/CategoryFormModal';
 import RecurringDeleteModal from './components/RecurringDeleteModal';
-import { supabase } from './supabaseClient';
 import { AlertCircle } from 'lucide-react';
 
-// Default Accounts (You can keep these or make them empty too if you wish)
+// Default Accounts
 const DEFAULT_ACCOUNTS: Account[] = [
   { id: 'a1', name: 'Efectivo', type: 'CASH', balance: 0 },
   { id: 'a2', name: 'Nómina', type: 'BANK', balance: 0 },
@@ -143,49 +154,33 @@ const getInitialDarkMode = (): boolean => {
 
 const App: React.FC = () => {
   // Auth State
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isRecovering, setIsRecovering] = useState(false);
 
   // Listen for auth changes
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('[FinanzaFlow] Auth State Change:', user ? 'Logged In' : 'Logged Out');
+      setSession(user);
       setAuthLoading(false);
     });
 
-    // Listen for changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('[FinanzaFlow] Auth Event:', event);
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsRecovering(true);
-      }
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
   const handleLogout = async () => {
     console.log('[FinanzaFlow] Cerrando sesión...');
     try {
-      await Promise.race([
-        supabase.auth.signOut(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2000)),
-      ]).catch((e) => console.warn('[FinanzaFlow] Supabase signOut falló:', e));
+      await signOut(auth);
     } catch (err) {
       console.error('[FinanzaFlow] Error al cerrar sesión:', err);
     }
 
-    // Limpiar SOLO las claves de nuestra App para no afectar a otros proyectos en localhost
     if (isBrowser) {
       Object.keys(STORAGE_KEYS).forEach((key) => {
         localStorage.removeItem(STORAGE_KEYS[key as keyof typeof STORAGE_KEYS]);
       });
-      // sessionStorage.clear(); // Opcional, pero mantengámoslo si es necesario
     }
 
     setSession(null);
@@ -217,9 +212,6 @@ const App: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [defaultFormType, setDefaultFormType] = useState<TransactionType>(TransactionType.EXPENSE);
 
-  // Modal States
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -235,97 +227,67 @@ const App: React.FC = () => {
   });
 
   const [recurringDeleteTarget, setRecurringDeleteTarget] = useState<Transaction | null>(null);
-
-  // Date Filtering State
   const [dateFilter, setDateFilter] = useState<DateFilter>(getInitialDateFilter);
 
-  // --- INITIAL DATA FETCH & MIGRATION ---
+  // --- INITIAL DATA FETCH & MIGRATION (Firestore) ---
   useEffect(() => {
     if (!session) return;
     const initData = async () => {
       setIsLoading(true);
       try {
-        const supUrl = (supabase as any).supabaseUrl || '';
-        console.log('[FinanzaFlow] Verificando conexión...', supUrl);
+        console.log('[FinanzaFlow] Sincronizando con Firestore...');
 
-        if (!supUrl || supUrl.includes('placeholder') || !supUrl.startsWith('http')) {
-          throw new Error(
-            'La URL de Supabase no es válida. Verifica las variables de entorno (debe empezar con https://).'
-          );
-        }
+        // Parallel Fetch from Firestore
+        const [catSnap, rulesSnap, transSnap, accSnap] = await Promise.all([
+          getDocs(query(collection(db, 'categories'), where('user_id', '==', session.uid))),
+          getDocs(query(collection(db, 'recurrence_rules'), where('user_id', '==', session.uid))),
+          getDocs(query(collection(db, 'transactions'), where('user_id', '==', session.uid))),
+          getDocs(query(collection(db, 'accounts'), where('user_id', '==', session.uid))),
+        ]);
 
-        console.log('[FinanzaFlow] Iniciando descarga de datos (con timeout de 10s)...');
-
-        // Timeout de seguridad: Si en 10s no responde, dar error
-        const fetchWithTimeout = Promise.race([
-          Promise.all([
-            supabase.from('categories').select('*').eq('user_id', session.user.id),
-            supabase.from('recurrence_rules').select('*').eq('user_id', session.user.id),
-            supabase.from('transactions').select('*').eq('user_id', session.user.id),
-            supabase.from('accounts').select('*').eq('user_id', session.user.id),
-          ]),
-          new Promise((_, reject) =>
-            setTimeout(
-              () =>
-                reject(
-                  new Error('Tiempo de espera agotado. Verifica la conexión o la URL de Supabase.')
-                ),
-              10000
-            )
-          ),
-        ]) as Promise<any[]>;
-
-        const [catRes, rulesRes, transRes, accRes] = await fetchWithTimeout;
-
-        console.log('[FinanzaFlow] Respuesta recibida:', {
-          cats: catRes.data?.length,
-          rules: rulesRes.data?.length,
-          txs: transRes.data?.length,
-          accs: accRes.data?.length,
+        const mappedCategories: Category[] = catSnap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, name: data.name, type: data.type, color: data.color, icon: data.icon };
         });
 
-        const mappedCategories: Category[] = (catRes.data || []).map((c) => ({
-          id: c.id,
-          name: c.name,
-          type: c.type,
-          color: c.color,
-          icon: c.icon,
-        }));
+        const mappedRules: RecurrenceRule[] = rulesSnap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            frequency: data.frequency,
+            quincenaN: data.quincena_n,
+            startDate: data.start_date,
+            endDate: data.end_date,
+            amount: data.amount,
+            type: data.type,
+            categoryId: data.category_id,
+            accountId: data.account_id,
+            note: data.note,
+            baseDateDay: data.base_date_day,
+          };
+        });
 
-        const mappedRules: RecurrenceRule[] = (rulesRes.data || []).map((r) => ({
-          id: r.id,
-          frequency: r.frequency,
-          quincenaN: r.quincena_n,
-          startDate: r.start_date,
-          endDate: r.end_date,
-          amount: parseFloat(r.amount),
-          type: r.type,
-          categoryId: r.category_id,
-          accountId: r.account_id,
-          note: r.note,
-          baseDateDay: r.base_date_day,
-        }));
+        const mappedTransactions: Transaction[] = transSnap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            amount: data.amount,
+            type: data.type,
+            date: data.date,
+            categoryId: data.category_id,
+            accountId: data.account_id,
+            note: data.note,
+            isRecurring: data.is_recurring,
+            recurrenceRuleId: data.recurrence_rule_id,
+          };
+        });
 
-        const mappedTransactions: Transaction[] = (transRes.data || []).map((t) => ({
-          id: t.id,
-          amount: parseFloat(t.amount),
-          type: t.type,
-          date: t.date,
-          categoryId: t.category_id,
-          accountId: t.account_id,
-          note: t.note,
-          isRecurring: t.is_recurring,
-          recurrenceRuleId: t.recurrence_rule_id,
-        }));
+        const mappedAccounts: Account[] = accSnap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, name: data.name, type: data.type, balance: data.balance };
+        });
 
-        const mappedAccounts: Account[] = (accRes.data || []).map((a) => ({
-          id: a.id,
-          name: a.name,
-          type: a.type,
-          balance: parseFloat(a.balance),
-        }));
-
-        // 2. INDIVIDUAL MIGRATION (Check each table independently)
+        // --- LOCAL MIGRATION LOGIC (If Firestore is empty) ---
         const localTrans = readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
         const localCats = readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || [];
         const localRules = readStorage<RecurrenceRule[]>(STORAGE_KEYS.RULES) || [];
@@ -336,43 +298,27 @@ const App: React.FC = () => {
         let finalRules = mappedRules;
         let finalTrans = mappedTransactions;
 
-        // Migrar Categorías si están vacías en Supabase
+        // Migrar locales a Firestore si está vacío
         if (mappedCategories.length === 0 && localCats.length > 0) {
-          console.warn('[FinanzaFlow] Migrando categorías locales...');
-          await supabase.from('categories').insert(
-            localCats.map((c) => ({
-              id: c.id,
-              name: c.name,
-              type: c.type,
-              color: c.color,
-              icon: c.icon,
-              user_id: session.user.id,
-            }))
-          );
+          console.warn('[FinanzaFlow] Migrando categorías locales a Firebase...');
+          for (const c of localCats) {
+            await setDoc(doc(db, 'categories', c.id), { ...c, user_id: session.uid });
+          }
           finalCats = localCats;
         }
 
-        // Migrar Cuentas si están vacías en Supabase (O subir DEFAULT_ACCOUNTS)
         if (mappedAccounts.length === 0) {
-          console.warn('[FinanzaFlow] Migrando cuentas locales...');
-          await supabase.from('accounts').insert(
-            localAccs.map((a) => ({
-              id: a.id,
-              name: a.name,
-              type: a.type,
-              balance: a.balance,
-              user_id: session.user.id,
-            }))
-          );
+          console.warn('[FinanzaFlow] Migrando cuentas locales a Firebase...');
+          for (const a of localAccs) {
+            await setDoc(doc(db, 'accounts', a.id), { ...a, user_id: session.uid });
+          }
           finalAccs = localAccs;
         }
 
-        // Migrar Reglas si están vacías en Supabase
         if (mappedRules.length === 0 && localRules.length > 0) {
-          console.warn('[FinanzaFlow] Migrando reglas locales...');
-          await supabase.from('recurrence_rules').insert(
-            localRules.map((r) => ({
-              id: r.id,
+          console.warn('[FinanzaFlow] Migrando reglas locales a Firebase...');
+          for (const r of localRules) {
+            await setDoc(doc(db, 'recurrence_rules', r.id), {
               frequency: r.frequency,
               quincena_n: r.quincenaN,
               start_date: r.startDate,
@@ -383,18 +329,16 @@ const App: React.FC = () => {
               account_id: r.accountId,
               note: r.note,
               base_date_day: r.baseDateDay,
-              user_id: session.user.id,
-            }))
-          );
+              user_id: session.uid
+            });
+          }
           finalRules = localRules;
         }
 
-        // Migrar Transacciones si están vacías en Supabase
         if (mappedTransactions.length === 0 && localTrans.length > 0) {
-          console.warn('[FinanzaFlow] Migrando transacciones locales...');
-          await supabase.from('transactions').insert(
-            localTrans.map((t) => ({
-              id: t.id,
+          console.warn('[FinanzaFlow] Migrando transacciones locales a Firebase...');
+          for (const t of localTrans) {
+            await setDoc(doc(db, 'transactions', t.id), {
               amount: t.amount,
               type: t.type,
               date: t.date,
@@ -403,24 +347,20 @@ const App: React.FC = () => {
               note: t.note,
               is_recurring: t.isRecurring,
               recurrence_rule_id: t.recurrenceRuleId,
-              user_id: session.user.id,
-            }))
-          );
+              user_id: session.uid
+            });
+          }
           finalTrans = localTrans;
         }
 
-        // 3. SET FINAL STATES
         setCategories(finalCats);
         setAccounts(finalAccs);
         setRecurrenceRules(finalRules);
         setTransactions(finalTrans);
-        setRecurrenceExceptions(
-          readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) || []
-        );
+        setRecurrenceExceptions(readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) || []);
       } catch (err: any) {
-        console.error('Error inicializando Supabase:', err);
+        console.error('Error inicializando Firestore:', err);
         setInitError(err.message);
-        // Fallback to local
         setTransactions(readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || []);
         setCategories(readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || []);
         setAccounts(readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS);
@@ -432,7 +372,7 @@ const App: React.FC = () => {
     initData();
   }, [session]);
 
-  // --- PERSISTENCE: Save to BOTH for extra safety ---
+  // --- PERSISTENCE: Save to LocalStorage ---
   useEffect(() => {
     if (!isLoading) writeStorage(STORAGE_KEYS.TRANSACTIONS, transactions);
   }, [transactions, isLoading]);
@@ -463,7 +403,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!isBrowser) return;
-
     if (darkMode) {
       document.documentElement.classList.add('dark');
     } else {
@@ -473,10 +412,8 @@ const App: React.FC = () => {
   }, [darkMode]);
 
   // --- RECURRENCE LOGIC ---
-
-  // Effect: Whenever month changes or rules change, generate missing transactions for current view
   useEffect(() => {
-    if (recurrenceRules.length > 0) {
+    if (recurrenceRules.length > 0 && session) {
       const generated = generateMissingRecurringTransactions(
         recurrenceRules,
         transactions,
@@ -488,11 +425,9 @@ const App: React.FC = () => {
       if (generated.length > 0) {
         setTransactions((prev) => [...prev, ...generated]);
 
-        // SYNC auto-generated recurring transactions to Supabase
         const syncGenerated = async () => {
           for (const tx of generated) {
-            const { error } = await supabase.from('transactions').upsert({
-              id: tx.id,
+            await setDoc(doc(db, 'transactions', tx.id), {
               amount: tx.amount,
               type: tx.type,
               date: tx.date,
@@ -501,50 +436,38 @@ const App: React.FC = () => {
               note: tx.note,
               is_recurring: tx.isRecurring,
               recurrence_rule_id: tx.recurrenceRuleId,
-              user_id: session?.user?.id,
+              user_id: session.uid
             });
-            if (error) console.error('[Supabase] Error sincronizando tx recurrente:', error);
           }
         };
         syncGenerated();
       }
     }
-  }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions]);
+  }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions, session]);
 
   // --- AI EXECUTION LOGIC ---
   const handleAIExecute = async (actions: AIAction[]) => {
-    if (!session?.user?.id) {
-      alert('Sesión no válida para usar la IA');
-      return;
-    }
+    if (!session?.uid) return;
 
     setIsLoading(true);
     try {
-      const uId = session.user.id;
+      const uId = session.uid;
       const newTransactions: Transaction[] = [];
       const newRules: RecurrenceRule[] = [];
       const freshCategories = [...categories];
 
       for (const action of actions) {
-        // Validation & Sanitization
-        let amountNum =
-          typeof action.amount === 'string' ? parseFloat(action.amount) : action.amount;
+        let amountNum = typeof action.amount === 'string' ? parseFloat(action.amount) : action.amount;
         if (isNaN(amountNum)) amountNum = 0;
 
         let validDate = action.date || new Date().toISOString().split('T')[0];
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(validDate)) {
-          validDate = new Date().toISOString().split('T')[0];
-        }
 
-        // Find matching category or CREATE it if missing
-        let cat = freshCategories.find(
-          (c) =>
-            c.name.toLowerCase().includes(action.categoryName.toLowerCase()) ||
-            action.categoryName.toLowerCase().includes(c.name.toLowerCase())
+        let cat = freshCategories.find(c => 
+          c.name.toLowerCase().includes(action.categoryName.toLowerCase()) || 
+          action.categoryName.toLowerCase().includes(c.name.toLowerCase())
         );
 
         if (!cat) {
-          console.log(`[FinanzaFlow] IA: Creando categoría faltante: ${action.categoryName}`);
           const newCat: Category = {
             id: generateId(),
             name: action.categoryName || 'Sin Categoría',
@@ -553,33 +476,12 @@ const App: React.FC = () => {
             icon: 'Tag',
           };
 
-          const { error: catErr } = await supabase.from('categories').insert({
-            id: newCat.id,
-            name: newCat.name,
-            type: newCat.type,
-            color: newCat.color,
-            icon: newCat.icon,
-            user_id: uId,
-          });
-
-          if (!catErr) {
-            cat = newCat;
-            freshCategories.push(newCat);
-          } else {
-            console.error('Error creating AI category:', catErr);
-            // Fallback to any category of the same type
-            cat =
-              freshCategories.find((c) => c.type === action.transactionType) || freshCategories[0];
-          }
+          await setDoc(doc(db, 'categories', newCat.id), { ...newCat, user_id: uId });
+          cat = newCat;
+          freshCategories.push(newCat);
         }
 
-        // Final safety check
-        if (!cat) continue;
-
-        const acc =
-          accounts.find((a) => a.name.toLowerCase().includes(action.accountName.toLowerCase())) ||
-          accounts.find((a) => a.name === 'Efectivo') ||
-          accounts[0];
+        const acc = accounts.find(a => a.name.toLowerCase().includes(action.accountName.toLowerCase())) || accounts[0];
 
         if (action.type === 'RECURRING') {
           const ruleId = generateId();
@@ -599,19 +501,18 @@ const App: React.FC = () => {
             baseDateDay: dayNum,
           };
 
-          const { error } = await supabase.from('recurrence_rules').insert({
-            id: rule.id,
+          await setDoc(doc(db, 'recurrence_rules', rule.id), {
             frequency: rule.frequency,
+            quincena_n: rule.quincenaN,
             start_date: rule.startDate,
             amount: rule.amount,
             type: rule.type,
             category_id: rule.categoryId,
             account_id: rule.accountId,
             note: rule.note,
-            user_id: uId,
+            base_date_day: rule.baseDateDay,
+            user_id: uId
           });
-
-          if (error) throw error;
           newRules.push(rule);
         } else {
           const txId = generateId();
@@ -626,8 +527,7 @@ const App: React.FC = () => {
             isRecurring: false,
           };
 
-          const { error } = await supabase.from('transactions').insert({
-            id: tx.id,
+          await setDoc(doc(db, 'transactions', tx.id), {
             amount: tx.amount,
             type: tx.type,
             date: tx.date,
@@ -635,40 +535,29 @@ const App: React.FC = () => {
             account_id: tx.accountId,
             note: tx.note,
             is_recurring: false,
-            user_id: uId,
+            user_id: uId
           });
-
-          if (error) throw error;
           newTransactions.push(tx);
         }
       }
 
-      // Final State Updates
       setCategories(freshCategories);
       setTransactions((prev) => [...prev, ...newTransactions]);
       setRecurrenceRules((prev) => [...prev, ...newRules]);
-
-      console.log(
-        `[FinanzaFlow] ¡Magia completada! ${newTransactions.length} transacciones y ${newRules.length} reglas creadas.`
-      );
-    } catch (error: any) {
+    } catch (error) {
       console.error('AI Execution Error', error);
-      alert('Error de la IA: ' + (error.message || 'No se pudo guardar'));
+      alert('Error de la IA');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Derived Data
   const filteredTransactions = useMemo(
     () => filterTransactions(transactions, dateFilter.month, dateFilter.year, dateFilter.period),
     [transactions, dateFilter]
   );
 
-  // Actions
-
   const handleEditClick = (t: Transaction) => {
-    console.log('handleEditClick called with:', t);
     setEditingTransaction(t);
     setIsModalOpen(true);
   };
@@ -682,6 +571,7 @@ const App: React.FC = () => {
       updateFuture: boolean;
     }
   ) => {
+    if (!session) return;
     try {
       let newTransactions = [...transactions];
       const newRules = [...recurrenceRules];
@@ -722,10 +612,7 @@ const App: React.FC = () => {
         transactionsToSync.push(txWithRule);
       } else if (editingTransaction) {
         if (options?.updateFuture && editingTransaction.recurrenceRuleId) {
-          const oldRuleIndex = newRules.findIndex(
-            (r) => r.id === editingTransaction.recurrenceRuleId
-          );
-
+          const oldRuleIndex = newRules.findIndex((r) => r.id === editingTransaction.recurrenceRuleId);
           if (oldRuleIndex >= 0) {
             const editedDate = new Date(t.date + 'T00:00:00');
             const prevDay = new Date(editedDate);
@@ -768,22 +655,10 @@ const App: React.FC = () => {
           }
         } else {
           if (editingTransaction.isRecurring && editingTransaction.recurrenceRuleId) {
-            // 1. Mark this date as an exception so it's never re-generated
-            const exception = {
-              ruleId: editingTransaction.recurrenceRuleId,
-              date: editingTransaction.date,
-            };
-            setRecurrenceExceptions((prev) => [...prev, exception]);
-
-            // 2. Remove the OLD record from state and Supabase
+            setRecurrenceExceptions((prev) => [...prev, { ruleId: editingTransaction.recurrenceRuleId!, date: editingTransaction.date }]);
             newTransactions = newTransactions.filter((item) => item.id !== editingTransaction.id);
-            await supabase
-              .from('transactions')
-              .delete()
-              .eq('id', editingTransaction.id)
-              .eq('user_id', session?.user?.id);
+            await deleteDoc(doc(db, 'transactions', editingTransaction.id));
 
-            // 3. Create the new DETACHED record
             const detachedTx: Transaction = {
               ...t,
               id: generateId(),
@@ -793,13 +668,8 @@ const App: React.FC = () => {
             newTransactions = [...newTransactions, detachedTx];
             transactionsToSync.push(detachedTx);
           } else {
-            const updatedTx: Transaction = {
-              ...t,
-              id: editingTransaction.id,
-            };
-            newTransactions = newTransactions.map((item) =>
-              item.id === editingTransaction.id ? updatedTx : item
-            );
+            const updatedTx: Transaction = { ...t, id: editingTransaction.id };
+            newTransactions = newTransactions.map((item) => item.id === editingTransaction.id ? updatedTx : item);
             transactionsToSync.push(updatedTx);
           }
         }
@@ -814,29 +684,25 @@ const App: React.FC = () => {
       setEditingTransaction(null);
       setIsModalOpen(false);
 
-      // --- SUPABASE SYNC (ALL pending items) ---
+      // --- FIRESTORE SYNC ---
       for (const rule of rulesToSync) {
-        const { error } = await supabase.from('recurrence_rules').upsert({
-          id: rule.id,
+        await setDoc(doc(db, 'recurrence_rules', rule.id), {
           frequency: rule.frequency,
           quincena_n: rule.quincenaN,
           start_date: rule.startDate,
-          end_date: rule.endDate,
+          end_date: rule.endDate || null,
           amount: rule.amount,
           type: rule.type,
           category_id: rule.categoryId,
           account_id: rule.accountId,
           note: rule.note,
           base_date_day: rule.baseDateDay,
-          user_id: session?.user?.id,
+          user_id: session.uid
         });
-        if (error) console.error('[Supabase] Error sincronizando regla:', error);
       }
 
       for (const tx of transactionsToSync) {
-        console.log('[Supabase] Sincronizando transacción:', tx.id, tx.amount);
-        const { error } = await supabase.from('transactions').upsert({
-          id: tx.id,
+        await setDoc(doc(db, 'transactions', tx.id), {
           amount: tx.amount,
           type: tx.type,
           date: tx.date,
@@ -844,10 +710,9 @@ const App: React.FC = () => {
           account_id: tx.accountId,
           note: tx.note,
           is_recurring: tx.isRecurring,
-          recurrence_rule_id: tx.recurrenceRuleId,
-          user_id: session?.user?.id,
+          recurrence_rule_id: tx.recurrenceRuleId || null,
+          user_id: session.uid
         });
-        if (error) throw error;
       }
 
       // UPDATE ACCOUNT BALANCE
@@ -855,96 +720,49 @@ const App: React.FC = () => {
         const accountId = transactionsToSync[0].accountId;
         const accountTransactions = newTransactions.filter((tx) => tx.accountId === accountId);
         const newBalance = roundToTwo(
-          accountTransactions.reduce((acc, tx) => {
-            return tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount;
-          }, 0)
+          accountTransactions.reduce((acc, tx) => tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount, 0)
         );
-        await supabase
-          .from('accounts')
-          .update({ balance: newBalance })
-          .eq('id', accountId)
-          .eq('user_id', session?.user?.id);
-        setAccounts((prev) =>
-          prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a))
-        );
+        await updateDoc(doc(db, 'accounts', accountId), { balance: newBalance });
+        setAccounts((prev) => prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a)));
       }
     } catch (error) {
-      console.error('Error al guardar la transacción:', error);
-      alert('Hubo un error al guardar la transacción. Por favor, inténtalo de nuevo.');
+      console.error('Error al guardar:', error);
     }
   };
 
   const performDeleteInstance = async (tx: Transaction) => {
-    if (!tx || !tx.recurrenceRuleId) return;
-
-    setRecurrenceExceptions((prev) => {
-      if (prev.some((e) => e.ruleId === tx.recurrenceRuleId && e.date === tx.date)) return prev;
-      return [...prev, { ruleId: tx.recurrenceRuleId!, date: tx.date }];
-    });
+    if (!tx || !tx.recurrenceRuleId || !session) return;
+    setRecurrenceExceptions((prev) => [...prev, { ruleId: tx.recurrenceRuleId!, date: tx.date }]);
     const updatedTransactions = transactions.filter((t) => t.id !== tx.id);
     setTransactions(updatedTransactions);
     setRecurringDeleteTarget(null);
 
-    // Sync deletion
-    await supabase.from('transactions').delete().eq('id', tx.id).eq('user_id', session?.user?.id);
+    await deleteDoc(doc(db, 'transactions', tx.id));
 
-    // Update Balance
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-    const newBalance = roundToTwo(
-      accountTransactions.reduce(
-        (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
-        0
-      )
-    );
-    await supabase
-      .from('accounts')
-      .update({ balance: newBalance })
-      .eq('id', tx.accountId)
-      .eq('user_id', session?.user?.id);
-    setAccounts((prev) =>
-      prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
-    );
+    const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
+    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance });
+    setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
   };
 
   const performDeleteSeries = async (tx: Transaction) => {
-    if (!tx || !tx.recurrenceRuleId) return;
-
+    if (!tx || !tx.recurrenceRuleId || !session) return;
     setRecurrenceRules((prev) => prev.filter((r) => r.id !== tx.recurrenceRuleId));
-    setRecurrenceExceptions((prev) => prev.filter((e) => e.ruleId !== tx.recurrenceRuleId));
-    const updatedTransactions = transactions.filter(
-      (t) => t.recurrenceRuleId !== tx.recurrenceRuleId
-    );
+    const updatedTransactions = transactions.filter((t) => t.recurrenceRuleId !== tx.recurrenceRuleId);
     setTransactions(updatedTransactions);
     setRecurringDeleteTarget(null);
 
-    // Sync deletion
-    await supabase
-      .from('transactions')
-      .delete()
-      .eq('recurrence_rule_id', tx.recurrenceRuleId)
-      .eq('user_id', session?.user?.id);
-    await supabase
-      .from('recurrence_rules')
-      .delete()
-      .eq('id', tx.recurrenceRuleId)
-      .eq('user_id', session?.user?.id);
+    // Delete all instances and the rule in Firestore (Ideally with batch)
+    const txsToDelete = transactions.filter(t => t.recurrenceRuleId === tx.recurrenceRuleId);
+    for (const t of txsToDelete) {
+      await deleteDoc(doc(db, 'transactions', t.id));
+    }
+    await deleteDoc(doc(db, 'recurrence_rules', tx.recurrenceRuleId));
 
-    // Update Balance
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-    const newBalance = roundToTwo(
-      accountTransactions.reduce(
-        (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
-        0
-      )
-    );
-    await supabase
-      .from('accounts')
-      .update({ balance: newBalance })
-      .eq('id', tx.accountId)
-      .eq('user_id', session?.user?.id);
-    setAccounts((prev) =>
-      prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
-    );
+    const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
+    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance });
+    setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
   };
 
   const handleDeleteTransaction = (id: string) => {
@@ -959,70 +777,47 @@ const App: React.FC = () => {
     setConfirmDialog({
       isOpen: true,
       title: 'Eliminar Transacción',
-      message:
-        '¿Estás seguro de que deseas eliminar esta transacción? Esta acción no se puede deshacer.',
+      message: '¿Estás seguro?',
       isDestructive: true,
       onConfirm: async () => {
         const updatedTransactions = transactions.filter((t) => t.id !== id);
-        await supabase.from('transactions').delete().eq('id', id).eq('user_id', session?.user?.id);
         setTransactions(updatedTransactions);
+        await deleteDoc(doc(db, 'transactions', id));
 
-        // Update Balance
         const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-        const newBalance = roundToTwo(
-          accountTransactions.reduce(
-            (acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount),
-            0
-          )
-        );
-        await supabase
-          .from('accounts')
-          .update({ balance: newBalance })
-          .eq('id', tx.accountId)
-          .eq('user_id', session?.user?.id);
-        setAccounts((prev) =>
-          prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a))
-        );
+        const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
+        await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance });
+        setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
       },
     });
   };
 
   const handleAddCategory = async (category: Category) => {
+    if (!session) return;
     setCategories((prev) => [...prev, category]);
-    await supabase.from('categories').insert({
-      id: category.id,
-      name: category.name,
-      type: category.type,
-      color: category.color,
-      icon: category.icon,
-      user_id: session?.user?.id,
-    });
+    await setDoc(doc(db, 'categories', category.id), { ...category, user_id: session.uid });
   };
 
   const handleUpdateCategory = async (category: Category) => {
+    if (!session) return;
     setCategories((prev) => prev.map((c) => (c.id === category.id ? category : c)));
-    await supabase
-      .from('categories')
-      .update({
-        name: category.name,
-        type: category.type,
-        color: category.color,
-        icon: category.icon,
-      })
-      .eq('id', category.id)
-      .eq('user_id', session?.user?.id);
+    await updateDoc(doc(db, 'categories', category.id), {
+      name: category.name,
+      type: category.type,
+      color: category.color,
+      icon: category.icon
+    });
   };
 
   const handleDeleteCategory = (id: string) => {
     setConfirmDialog({
       isOpen: true,
       title: 'Eliminar Categoría',
-      message:
-        '¿Seguro que deseas eliminar esta categoría? Si hay transacciones asociadas, aparecerán como "Sin Categoría".',
+      message: '¿Seguro?',
       isDestructive: true,
       onConfirm: async () => {
         setCategories((prev) => prev.filter((c) => c.id !== id));
-        await supabase.from('categories').delete().eq('id', id).eq('user_id', session?.user?.id);
+        await deleteDoc(doc(db, 'categories', id));
       },
     });
   };
@@ -1030,67 +825,35 @@ const App: React.FC = () => {
   const changeMonth = (delta: number) => {
     let newMonth = dateFilter.month + delta;
     let newYear = dateFilter.year;
-
-    if (newMonth > 11) {
-      newMonth = 0;
-      newYear++;
-    } else if (newMonth < 0) {
-      newMonth = 11;
-      newYear--;
-    }
+    if (newMonth > 11) { newMonth = 0; newYear++; } 
+    else if (newMonth < 0) { newMonth = 11; newYear--; }
     setDateFilter((prev) => ({ ...prev, month: newMonth, year: newYear }));
   };
 
-  const monthName = new Date(dateFilter.year, dateFilter.month).toLocaleString('es-MX', {
-    month: 'long',
-    year: 'numeric',
-  });
+  const monthName = new Date(dateFilter.year, dateFilter.month).toLocaleString('es-MX', { month: 'long', year: 'numeric' });
 
-  // --- AUTH GATE ---
   if (authLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-slate-400 font-medium">Cargando...</p>
+        <p className="text-slate-400 font-medium">Cargando Firebase...</p>
       </div>
     );
   }
 
   if (!session || isRecovering) {
-    return (
-      <AuthPage
-        initialMode={isRecovering ? 'reset' : 'login'}
-        onFinishRecovery={() => setIsRecovering(false)}
-      />
-    );
+    return <AuthPage initialMode={isRecovering ? 'reset' : 'login'} onFinishRecovery={() => setIsRecovering(false)} />;
   }
 
-  // SI HAY UN ERROR CRÍTICO AL INICIAR
   if (initError) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mb-6 shadow-lg">
-          <AlertCircle size={32} />
-        </div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-          Error de Conexión
-        </h2>
-        <p className="max-w-md text-slate-600 dark:text-slate-400 mb-8 p-4 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 font-mono text-xs overflow-auto">
-          {initError}
-        </p>
+        <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-full flex items-center justify-center mb-6 shadow-lg"><AlertCircle size={32} /></div>
+        <h2 className="text-2xl font-bold mb-2">Error de Sincronización</h2>
+        <p className="max-w-md text-slate-600 dark:text-slate-400 mb-8 p-4 bg-slate-100 dark:bg-slate-900 rounded-xl border font-mono text-xs overflow-auto">{initError}</p>
         <div className="flex flex-col gap-3">
-          <button
-            onClick={() => window.location.reload()}
-            className="px-6 py-2 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
-          >
-            Reintentar Conexión
-          </button>
-          <button
-            onClick={handleLogout}
-            className="px-6 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
-          >
-            Cerrar Sesión y Limpiar
-          </button>
+          <button onClick={() => window.location.reload()} className="px-6 py-2 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700">Reintentar</button>
+          <button onClick={handleLogout} className="px-6 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-semibold">Cerrar Sesión</button>
         </div>
       </div>
     );
@@ -1100,138 +863,51 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
         <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="font-medium text-slate-600 dark:text-slate-400 animate-pulse">
-          Sincronizando con Supabase...
-        </p>
-        <button
-          onClick={handleLogout}
-          className="mt-8 text-sm text-slate-400 hover:text-rose-500 underline decoration-dotted"
-        >
-          ¿Atascado? Cerrar sesión y reintentar
-        </button>
+        <p className="font-medium text-slate-600 dark:text-slate-400 animate-pulse">Sincronizando con Google Firebase...</p>
+        <button onClick={handleLogout} className="mt-8 text-sm text-slate-400 hover:text-rose-500 underline decoration-dotted">¿Atascado? Cerrar sesión</button>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
-      {/* Top Navigation Bar */}
       <header className="fixed top-0 w-full z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        {/* Row 1: Logo, AI Button, Actions */}
         <div className="max-w-5xl mx-auto px-3 sm:px-4 h-12 sm:h-14 flex items-center justify-between">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-primary-500/30 flex-shrink-0">
-              F
-            </div>
+            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-lg flex-shrink-0">F</div>
             <span className="font-bold text-lg tracking-tight hidden sm:block">FinanzaFlow</span>
-
-            <button
-              onClick={() => setIsAIModalOpen(true)}
-              className="ml-1 sm:ml-3 px-2 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[10px] sm:text-xs font-bold rounded-full shadow-lg shadow-indigo-500/30 flex items-center gap-1 hover:brightness-110 transition-all animate-pulse flex-shrink-0"
-            >
-              <Sparkles size={12} className="text-yellow-300" />
-              <span className="hidden xs:inline">Asistente</span>
-              <span className="hidden sm:inline"> IA</span>
-            </button>
+            <button onClick={() => setIsAIModalOpen(true)} className="ml-1 sm:ml-3 px-2 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[10px] sm:text-xs font-bold rounded-full shadow-lg flex items-center gap-1 hover:brightness-110 transition-all animate-pulse"><Sparkles size={12} className="text-yellow-300" /><span className="hidden xs:inline">Asistente IA</span></button>
           </div>
-
           <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
-            {session?.user?.email && (
-              <span className="hidden xs:block text-[10px] sm:text-xs text-slate-500 font-medium truncate max-w-[80px] sm:max-w-[150px] mr-1">
-                {session.user.email.split('@')[0]}
-              </span>
-            )}
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-1.5 sm:p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-              title={darkMode ? 'Modo Claro' : 'Modo Oscuro'}
-            >
-              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="p-1.5 sm:p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors"
-              title="Cerrar Sesión"
-            >
-              <LogOut size={18} />
-            </button>
+            {session?.email && <span className="hidden xs:block text-[10px] sm:text-xs text-slate-500 font-medium truncate max-w-[80px] sm:max-w-[150px] mr-1">{session.email.split('@')[0]}</span>}
+            <button onClick={() => setDarkMode(!darkMode)} className="p-1.5 sm:p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+            <button onClick={handleLogout} className="p-1.5 sm:p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><LogOut size={18} /></button>
           </div>
         </div>
-
-        {/* Row 2: Month Navigator (always visible, compact) */}
         <div className="max-w-5xl mx-auto px-3 sm:px-4 h-10 flex items-center justify-center border-t border-slate-100 dark:border-slate-800/50">
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 sm:p-1">
-            <button
-              onClick={() => changeMonth(-1)}
-              className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span className="px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize w-28 sm:w-32 text-center select-none">
-              {monthName}
-            </span>
-            <button
-              onClick={() => changeMonth(1)}
-              className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"
-            >
-              <ChevronRight size={16} />
-            </button>
+            <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronLeft size={16} /></button>
+            <span className="px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize w-28 sm:w-32 text-center select-none">{monthName}</span>
+            <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronRight size={16} /></button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-5xl mx-auto px-3 sm:px-4 pt-[5.5rem] sm:pt-[6.5rem] pb-24">
-        {/* Period Filter Tabs */}
         {(view === 'DASHBOARD' || view === 'TRANSACTIONS') && (
           <div className="flex justify-center mb-4 sm:mb-8">
-            <div className="bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex max-w-full overflow-x-auto custom-scrollbar">
-              <button
-                onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q1 }))}
-                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${dateFilter.period === PeriodType.Q1 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              >
-                1ª Quincena
-              </button>
-              <button
-                onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q2 }))}
-                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${dateFilter.period === PeriodType.Q2 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              >
-                2ª Quincena
-              </button>
-              <button
-                onClick={() => setDateFilter((prev) => ({ ...prev, period: 'ALL' }))}
-                className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${dateFilter.period === 'ALL' ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-              >
-                Mes Completo
-              </button>
+            <div className="bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex max-w-full overflow-x-auto">
+              <button onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q1 }))} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q1 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600' : 'text-slate-500'}`}>1ª Quincena</button>
+              <button onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q2 }))} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q2 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600' : 'text-slate-500'}`}>2ª Quincena</button>
+              <button onClick={() => setDateFilter((prev) => ({ ...prev, period: 'ALL' }))} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${dateFilter.period === 'ALL' ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600' : 'text-slate-500'}`}>Mes Completo</button>
             </div>
           </div>
         )}
 
-        {/* Dynamic Views */}
         {view === 'DASHBOARD' && (
           <>
-            <QuickActionPanel
-              onAddExpense={() => {
-                setEditingTransaction(null);
-                setDefaultFormType(TransactionType.EXPENSE);
-                setIsModalOpen(true);
-              }}
-              onAddIncome={() => {
-                setEditingTransaction(null);
-                setDefaultFormType(TransactionType.INCOME);
-                setIsModalOpen(true);
-              }}
-              onOpenAI={() => setIsAIModalOpen(true)}
-              onAddCategory={() => setIsCategoryModalOpen(true)}
-            />
-            <Dashboard
-              transactions={filteredTransactions}
-              categories={categories}
-              filter={dateFilter}
-              onEdit={handleEditClick}
-              onDelete={handleDeleteTransaction}
-            />
+            <QuickActionPanel onAddExpense={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.EXPENSE); setIsModalOpen(true); }} onAddIncome={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.INCOME); setIsModalOpen(true); }} onOpenAI={() => setIsAIModalOpen(true)} onAddCategory={() => setIsCategoryModalOpen(true)} />
+            <Dashboard transactions={filteredTransactions} categories={categories} filter={dateFilter} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
           </>
         )}
 
@@ -1239,179 +915,62 @@ const App: React.FC = () => {
           <div className="animate-fade-in">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold">Movimientos</h2>
-              <span className="text-sm text-slate-500">
-                {filteredTransactions.length} registros
-              </span>
+              <span className="text-sm text-slate-500">{filteredTransactions.length} registros</span>
             </div>
-            <TransactionList
-              transactions={filteredTransactions}
-              categories={categories}
-              onEdit={handleEditClick}
-              onDelete={handleDeleteTransaction}
-            />
+            <TransactionList transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
           </div>
         )}
 
         {view === 'SETTINGS' && (
           <div className="animate-fade-in pb-20 space-y-4">
-            {/* User Profile Info */}
             <div className="bg-gradient-to-br from-primary-600 to-indigo-700 p-4 rounded-xl shadow-lg text-white mb-2">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-xl font-bold">
-                  {session?.user?.email?.[0].toUpperCase() || 'U'}
-                </div>
+                <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-xl font-bold">{session?.email?.[0].toUpperCase() || 'U'}</div>
                 <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-widest opacity-70 font-bold">
-                    Perfil Activo
-                  </p>
-                  <p className="text-sm font-bold truncate">{session?.user?.email}</p>
-                  <p className="text-[10px] opacity-80 mt-0.5">Sincronización en la nube activa</p>
+                  <p className="text-[10px] uppercase tracking-widest opacity-70 font-bold">Perfil Activo</p>
+                  <p className="text-sm font-bold truncate">{session?.email}</p>
+                  <p className="text-[10px] opacity-80 mt-0.5">Sincronizado con Google Firebase ✅</p>
                 </div>
               </div>
             </div>
-
             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400">
-                  <FileText size={20} />
-                </div>
+                <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400"><FileText size={20} /></div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                    Documentación
-                  </h3>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Documentación</h3>
                   <p className="text-xs text-slate-500">Guía y planificación</p>
                 </div>
               </div>
-              <button
-                onClick={() => setView('PLANNING')}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors"
-              >
-                Abrir
-              </button>
+              <button onClick={() => setView('PLANNING')} className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors">Abrir</button>
             </div>
-
-            <CategorySettings
-              categories={categories}
-              onAdd={handleAddCategory}
-              onUpdate={handleUpdateCategory}
-              onDelete={handleDeleteCategory}
-              onOpenAddModal={() => setIsCategoryModalOpen(true)}
-            />
+            <CategorySettings categories={categories} onAdd={handleAddCategory} onUpdate={handleUpdateCategory} onDelete={handleDeleteCategory} onOpenAddModal={() => setIsCategoryModalOpen(true)} />
           </div>
         )}
 
         {view === 'PLANNING' && (
           <div className="animate-fade-in">
-            <button
-              onClick={() => setView('SETTINGS')}
-              className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-sm mb-6 hover:underline"
-            >
-              <ChevronLeft size={16} /> Volver a Ajustes
-            </button>
+            <button onClick={() => setView('SETTINGS')} className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-sm mb-6 hover:underline"><ChevronLeft size={16} /> Volver a Ajustes</button>
             <PlanningDocs />
           </div>
         )}
       </main>
 
-      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 h-16 pb-safe z-50">
         <div className="grid grid-cols-5 h-full max-w-lg mx-auto relative px-2">
-          {/* Tab 1: Inicio */}
-          <button
-            onClick={() => setView('DASHBOARD')}
-            className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'DASHBOARD' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <LayoutDashboard size={22} />
-            <span className="text-[10px] font-bold">Inicio</span>
-          </button>
-
-          {/* Tab 2: Historial */}
-          <button
-            onClick={() => setView('TRANSACTIONS')}
-            className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'TRANSACTIONS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <List size={22} />
-            <span className="text-[10px] font-bold">Historial</span>
-          </button>
-
-          {/* Tab 3: Central FAB (+) */}
-          <div className="relative flex justify-center items-center">
-            <button
-              onClick={() => {
-                setEditingTransaction(null);
-                setIsModalOpen(true);
-              }}
-              className="absolute -top-6 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-xl shadow-primary-600/30 flex items-center justify-center transition-all hover:scale-105 active:scale-90 ring-4 ring-white dark:ring-slate-900"
-              aria-label="Añadir transacción"
-            >
-              <Plus size={28} />
-            </button>
-          </div>
-
-          {/* Tab 4: Calculadora */}
-          <button
-            onClick={() => setIsCalculatorOpen(true)}
-            className={`flex flex-col items-center justify-center gap-1 transition-colors ${isCalculatorOpen ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <Calculator size={22} />
-            <span className="text-[10px] font-bold">Cálculo</span>
-          </button>
-
-          {/* Tab 5: Ajustes */}
-          <button
-            onClick={() => setView('SETTINGS')}
-            className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'SETTINGS' ? 'text-primary-600 dark:text-primary-400' : 'text-slate-400 hover:text-slate-600'}`}
-          >
-            <Settings size={22} />
-            <span className="text-[10px] font-bold">Ajustes</span>
-          </button>
+          <button onClick={() => setView('DASHBOARD')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'DASHBOARD' ? 'text-primary-600' : 'text-slate-400'}`}><LayoutDashboard size={22} /><span className="text-[10px] font-bold">Inicio</span></button>
+          <button onClick={() => setView('TRANSACTIONS')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'TRANSACTIONS' ? 'text-primary-600' : 'text-slate-400'}`}><List size={22} /><span className="text-[10px] font-bold">Historial</span></button>
+          <div className="relative flex justify-center items-center"><button onClick={() => { setEditingTransaction(null); setIsModalOpen(true); }} className="absolute -top-6 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-xl flex items-center justify-center ring-4 ring-white dark:ring-slate-900" aria-label="Añadir"><Plus size={28} /></button></div>
+          <button onClick={() => setIsCalculatorOpen(true)} className={`flex flex-col items-center justify-center gap-1 transition-colors ${isCalculatorOpen ? 'text-primary-600' : 'text-slate-400'}`}><Calculator size={22} /><span className="text-[10px] font-bold">Cálculo</span></button>
+          <button onClick={() => setView('SETTINGS')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'SETTINGS' ? 'text-primary-600' : 'text-slate-400'}`}><Settings size={22} /><span className="text-[10px] font-bold">Ajustes</span></button>
         </div>
       </nav>
 
-      {/* Modals */}
-      <TransactionForm
-        key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'}
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSave={handleSaveTransaction}
-        onAddCategory={handleAddCategory}
-        categories={categories}
-        accounts={accounts}
-        initialData={editingTransaction}
-        defaultType={defaultFormType}
-      />
+      <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={accounts} initialData={editingTransaction} defaultType={defaultFormType} />
       <FloatingCalculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
-
-      <ConfirmationModal
-        isOpen={confirmDialog.isOpen}
-        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmDialog.onConfirm}
-        title={confirmDialog.title}
-        message={confirmDialog.message}
-        isDestructive={confirmDialog.isDestructive}
-      />
-
-      <AIAssistantModal
-        isOpen={isAIModalOpen}
-        onClose={() => setIsAIModalOpen(false)}
-        transactions={transactions}
-        categories={categories}
-        accounts={accounts}
-        onExecuteContext={handleAIExecute}
-      />
-      <RecurringDeleteModal
-        isOpen={!!recurringDeleteTarget}
-        onClose={() => setRecurringDeleteTarget(null)}
-        onDeleteInstance={() =>
-          recurringDeleteTarget && performDeleteInstance(recurringDeleteTarget)
-        }
-        onDeleteSeries={() => recurringDeleteTarget && performDeleteSeries(recurringDeleteTarget)}
-      />
-      <CategoryFormModal
-        isOpen={isCategoryModalOpen}
-        onClose={() => setIsCategoryModalOpen(false)}
-        onAdd={handleAddCategory}
-      />
+      <ConfirmationModal isOpen={confirmDialog.isOpen} onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))} onConfirm={confirmDialog.onConfirm} title={confirmDialog.title} message={confirmDialog.message} isDestructive={confirmDialog.isDestructive} />
+      <AIAssistantModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} transactions={transactions} categories={categories} accounts={accounts} onExecuteContext={handleAIExecute} />
+      <RecurringDeleteModal isOpen={!!recurringDeleteTarget} onClose={() => setRecurringDeleteTarget(null)} onDeleteInstance={() => recurringDeleteTarget && performDeleteInstance(recurringDeleteTarget)} onDeleteSeries={() => recurringDeleteTarget && performDeleteSeries(recurringDeleteTarget)} />
+      <CategoryFormModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onAdd={handleAddCategory} />
     </div>
   );
 };

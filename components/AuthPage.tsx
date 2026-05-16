@@ -1,5 +1,13 @@
 import React, { useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { auth } from '../firebaseClient';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  sendPasswordResetEmail, 
+  updatePassword,
+  signOut,
+  onAuthStateChange // Note: Not directly used here but good to keep in mind
+} from 'firebase/auth';
 import { Eye, EyeOff, Lock, Mail, LogIn, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
 
 interface AuthPageProps {
@@ -19,21 +27,6 @@ const AuthPage: React.FC<AuthPageProps> = ({ onFinishRecovery, initialMode }) =>
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Escuchar el evento de recuperación de contraseña de Supabase
-  React.useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setIsResetPassword(true);
-        setIsForgotPassword(false);
-        setIsLogin(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -48,17 +41,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ onFinishRecovery, initialMode }) =>
           return;
         }
 
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin,
-        });
-
-        if (error) {
-          setError(error.message);
-        } else {
-          setSuccessMessage('Se ha enviado un correo para restablecer tu contraseña.');
-          setIsForgotPassword(false);
-          setIsLogin(true);
-        }
+        await sendPasswordResetEmail(auth, email);
+        setSuccessMessage('Se ha enviado un correo para restablecer tu contraseña.');
+        setIsForgotPassword(false);
+        setIsLogin(true);
         setLoading(false);
         return;
       }
@@ -75,17 +61,15 @@ const AuthPage: React.FC<AuthPageProps> = ({ onFinishRecovery, initialMode }) =>
           return;
         }
 
-        const { error } = await supabase.auth.updateUser({ password });
-
-        if (error) {
-          setError(error.message);
-        } else {
+        if (auth.currentUser) {
+          await updatePassword(auth.currentUser, password);
           setSuccessMessage('Contraseña actualizada exitosamente. Ya puedes iniciar sesión.');
           setIsResetPassword(false);
           setIsLogin(true);
           if (onFinishRecovery) onFinishRecovery();
-          // Opcional: Cerrar sesión para forzar re-login con nueva pass
-          await supabase.auth.signOut();
+          await signOut(auth);
+        } else {
+          setError('No hay una sesión activa para cambiar la contraseña.');
         }
         setLoading(false);
         return;
@@ -111,40 +95,30 @@ const AuthPage: React.FC<AuthPageProps> = ({ onFinishRecovery, initialMode }) =>
       }
 
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) {
-          if (error.message.includes('Invalid login credentials')) {
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+        } catch (err: any) {
+          if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
             setError('Email o contraseña incorrectos.');
-          } else if (error.message.includes('Email not confirmed')) {
-            setError('Revisa tu correo y confirma tu cuenta antes de iniciar sesión.');
           } else {
-            setError(error.message);
+            setError('Error al iniciar sesión: ' + err.message);
           }
         }
       } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) {
-          if (error.message.includes('already registered')) {
+        try {
+          await createUserWithEmailAndPassword(auth, email, password);
+          setSuccessMessage('¡Cuenta creada exitosamente! Ya puedes comenzar.');
+          // Firebase logs in automatically after signup
+        } catch (err: any) {
+          if (err.code === 'auth/email-already-in-use') {
             setError('Este correo ya está registrado. Intenta iniciar sesión.');
           } else {
-            setError(error.message);
+            setError('Error al crear cuenta: ' + err.message);
           }
-        } else {
-          setSuccessMessage(
-            '¡Cuenta creada exitosamente! Revisa tu correo electrónico para confirmar tu cuenta.'
-          );
-          setEmail('');
-          setPassword('');
-          setConfirmPassword('');
         }
       }
-    } catch {
+    } catch (err: any) {
+      console.error('Auth Error:', err);
       setError('Error de conexión. Verifica tu internet e intenta de nuevo.');
     } finally {
       setLoading(false);
@@ -174,7 +148,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onFinishRecovery, initialMode }) =>
             <span className="text-white text-2xl font-bold">F</span>
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">FinanzaFlow</h1>
-          <p className="text-slate-400 mt-2">Tu control financiero personal</p>
+          <p className="text-slate-400 mt-2">Tu control financiero personal (Power by Firebase)</p>
         </div>
 
         {/* Card */}
@@ -395,7 +369,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onFinishRecovery, initialMode }) =>
 
         {/* Footer */}
         <p className="text-center text-slate-500 text-xs mt-6">
-          Tus datos están protegidos con cifrado de extremo a extremo.
+          Tus datos están protegidos con cifrado de extremo a extremo (Firebase Auth).
         </p>
       </div>
     </div>
