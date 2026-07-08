@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Category, TransactionType } from '../types';
 import { generateId } from '../utils';
-import { X, Check, Palette, Tag } from 'lucide-react';
+import { X, Check, Tag } from 'lucide-react';
 
 interface CategoryFormModalProps {
   isOpen: boolean;

@@ -8,8 +8,7 @@ import {
   deleteDoc, 
   updateDoc, 
   query, 
-  where,
-  writeBatch
+  where
 } from 'firebase/firestore';
 import { auth, db } from './firebaseClient';
 import {
@@ -51,11 +50,11 @@ import {
   ChevronRight,
   FileText,
   LogOut,
+  AlertCircle,
 } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
 import CategoryFormModal from './components/CategoryFormModal';
 import RecurringDeleteModal from './components/RecurringDeleteModal';
-import { AlertCircle } from 'lucide-react';
 
 // Default Accounts
 const DEFAULT_ACCOUNTS: Account[] = [
@@ -161,7 +160,7 @@ const App: React.FC = () => {
   // Listen for auth changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('[FinanzaFlow] Auth State Change:', user ? 'Logged In' : 'Logged Out');
+      console.warn('[FinanzaFlow] Auth State Change:', user ? 'Logged In' : 'Logged Out');
       setSession(user);
       setAuthLoading(false);
     });
@@ -170,7 +169,7 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = async () => {
-    console.log('[FinanzaFlow] Cerrando sesión...');
+    console.warn('[FinanzaFlow] Cerrando sesión...');
     try {
       await signOut(auth);
     } catch (err) {
@@ -235,7 +234,7 @@ const App: React.FC = () => {
     const initData = async () => {
       setIsLoading(true);
       try {
-        console.log('[FinanzaFlow] Sincronizando con Firestore...');
+        console.warn('[FinanzaFlow] Sincronizando con Firestore...');
 
         // Parallel Fetch from Firestore
         const [catSnap, rulesSnap, transSnap, accSnap] = await Promise.all([
@@ -320,9 +319,9 @@ const App: React.FC = () => {
           for (const r of localRules) {
             await setDoc(doc(db, 'recurrence_rules', r.id), {
               frequency: r.frequency,
-              quincena_n: r.quincenaN,
+              quincena_n: r.quincenaN ?? null,
               start_date: r.startDate,
-              end_date: r.endDate,
+              end_date: r.endDate ?? null,
               amount: r.amount,
               type: r.type,
               category_id: r.categoryId,
@@ -443,7 +442,7 @@ const App: React.FC = () => {
         syncGenerated();
       }
     }
-  }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions, session]);
+  }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions, transactions, session]);
 
   // --- AI EXECUTION LOGIC ---
   const handleAIExecute = async (actions: AIAction[]) => {
@@ -460,7 +459,7 @@ const App: React.FC = () => {
         let amountNum = typeof action.amount === 'string' ? parseFloat(action.amount) : action.amount;
         if (isNaN(amountNum)) amountNum = 0;
 
-        let validDate = action.date || new Date().toISOString().split('T')[0];
+        const validDate = action.date || new Date().toISOString().split('T')[0];
 
         let cat = freshCategories.find(c => 
           c.name.toLowerCase().includes(action.categoryName.toLowerCase()) || 
@@ -503,7 +502,7 @@ const App: React.FC = () => {
 
           await setDoc(doc(db, 'recurrence_rules', rule.id), {
             frequency: rule.frequency,
-            quincena_n: rule.quincenaN,
+            quincena_n: rule.quincenaN ?? null,
             start_date: rule.startDate,
             amount: rule.amount,
             type: rule.type,
@@ -656,17 +655,17 @@ const App: React.FC = () => {
         } else {
           if (editingTransaction.isRecurring && editingTransaction.recurrenceRuleId) {
             setRecurrenceExceptions((prev) => [...prev, { ruleId: editingTransaction.recurrenceRuleId!, date: editingTransaction.date }]);
-            newTransactions = newTransactions.filter((item) => item.id !== editingTransaction.id);
-            await deleteDoc(doc(db, 'transactions', editingTransaction.id));
 
-            const detachedTx: Transaction = {
+            const updatedTx: Transaction = {
               ...t,
-              id: generateId(),
+              id: editingTransaction.id,
               isRecurring: false,
               recurrenceRuleId: undefined,
             };
-            newTransactions = [...newTransactions, detachedTx];
-            transactionsToSync.push(detachedTx);
+            newTransactions = newTransactions.map((item) =>
+              item.id === editingTransaction.id ? updatedTx : item
+            );
+            transactionsToSync.push(updatedTx);
           } else {
             const updatedTx: Transaction = { ...t, id: editingTransaction.id };
             newTransactions = newTransactions.map((item) => item.id === editingTransaction.id ? updatedTx : item);
@@ -688,7 +687,7 @@ const App: React.FC = () => {
       for (const rule of rulesToSync) {
         await setDoc(doc(db, 'recurrence_rules', rule.id), {
           frequency: rule.frequency,
-          quincena_n: rule.quincenaN,
+          quincena_n: rule.quincenaN ?? null,
           start_date: rule.startDate,
           end_date: rule.endDate || null,
           amount: rule.amount,
@@ -725,8 +724,9 @@ const App: React.FC = () => {
         await updateDoc(doc(db, 'accounts', accountId), { balance: newBalance });
         setAccounts((prev) => prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a)));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al guardar:', error);
+      alert('Error al guardar: ' + (error?.message || 'Error desconocido. Revisa la consola (F12).'));
     }
   };
 

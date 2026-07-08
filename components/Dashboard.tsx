@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Transaction, TransactionType, Category, DateFilter } from '../types';
+import { Transaction, TransactionType, Category } from '../types';
 import { calculateTotals, formatCurrency, formatCurrencyCompact } from '../utils';
 import {
   ArrowUpCircle,
@@ -14,7 +14,6 @@ import {
 interface DashboardProps {
   transactions: Transaction[];
   categories: Category[];
-  filter: DateFilter;
   onEdit: (t: Transaction) => void;
   onDelete: (id: string) => void;
 }
@@ -100,7 +99,6 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ t, category, onEdit, on
 const Dashboard: React.FC<DashboardProps> = ({
   transactions,
   categories,
-  filter,
   onEdit,
   onDelete,
 }) => {

@@ -159,7 +159,7 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
       onClose();
       setPrompt('');
       setProposedActions([]);
-    } catch (err) {
+    } catch {
       setError('Error al guardar los datos en la base de datos.');
     } finally {
       setLoading(false);
@@ -306,7 +306,7 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
                           {action.amount.toLocaleString()}
                         </span>
                       </div>
-                      <div className="flex flex-wrap gap-2mt-1 text-sm text-slate-500">
+                      <div className="flex flex-wrap gap-2 mt-1 text-sm text-slate-500">
                         <span className="flex items-center gap-1">
                           <Calendar size={14} /> {action.date}
                         </span>

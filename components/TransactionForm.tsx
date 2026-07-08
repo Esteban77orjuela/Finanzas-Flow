@@ -154,7 +154,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     };
 
     onSave(transaction, {
-      createRule: isRecurring && !initialData, // Only create rule if new
+      createRule: isRecurring && !(initialData?.isRecurring), // Create rule if enabling recurring on existing
       frequency,
       quincenaN: frequency === 'BIWEEKLY' ? quincenaType : undefined,
       updateFuture, // Valid if editing an existing recurring transaction

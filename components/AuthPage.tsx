@@ -5,8 +5,7 @@ import {
   createUserWithEmailAndPassword, 
   sendPasswordResetEmail, 
   updatePassword,
-  signOut,
-  onAuthStateChange // Note: Not directly used here but good to keep in mind
+  signOut
 } from 'firebase/auth';
 import { Eye, EyeOff, Lock, Mail, LogIn, UserPlus, AlertCircle, CheckCircle } from 'lucide-react';
 
