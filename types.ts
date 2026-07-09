@@ -45,9 +45,31 @@ export interface Transaction {
   recurrenceRuleId?: string; // Links this specific transaction to a rule
 }
 
-export type ViewState = 'DASHBOARD' | 'TRANSACTIONS' | 'PLANNING' | 'SETTINGS';
+export type ViewState = 'DASHBOARD' | 'TRANSACTIONS' | 'PLANNING' | 'SETTINGS' | 'GOALS' | 'DEBTS';
 
 export interface DateFilter {
   month: number; // 0-11
   year: number;
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate: string; // "YYYY-MM"
+  color: string;
+  icon?: string;
+  createdAt: string;
+}
+
+export interface Debt {
+  id: string;
+  name: string;
+  totalAmount: number;
+  paidAmount: number;
+  dueDate?: string;
+  notes?: string;
+  color: string;
+  createdAt: string;
 }

@@ -20,6 +20,8 @@ import {
   TransactionType,
   RecurrenceRule,
   Frequency,
+  Goal,
+  Debt,
 } from './types';
 import {
   generateId,
@@ -36,13 +38,16 @@ import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
 import AuthPage from './components/AuthPage';
 import AIAssistantModal, { AIAction } from './components/AIAssistantModal';
+import GoalsView from './components/GoalsView';
+import DebtsView from './components/DebtsView';
+import GoalFormModal from './components/GoalFormModal';
+import DebtFormModal from './components/DebtFormModal';
 import {
   LayoutDashboard,
   List,
   Plus,
   Sparkles,
   Settings,
-  Calculator,
   Moon,
   Sun,
   ChevronLeft,
@@ -50,6 +55,11 @@ import {
   FileText,
   LogOut,
   AlertCircle,
+  CreditCard,
+  Menu,
+  X,
+  Trophy,
+  TrendingDown,
 } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
 import CategoryFormModal from './components/CategoryFormModal';
@@ -70,6 +80,8 @@ const STORAGE_KEYS = {
   DARK_MODE: 'finanzaFlow_darkMode',
   VIEW: 'finanzaFlow_view',
   DATE_FILTER: 'finanzaFlow_dateFilter',
+  GOALS: 'finanzaFlow_goals',
+  DEBTS: 'finanzaFlow_debts',
 } as const;
 
 type RecurrenceException = { ruleId: string; date: string };
@@ -123,7 +135,7 @@ const getInitialDateFilter = (): DateFilter => {
 };
 
 const getInitialView = (): ViewState => {
-  const validViews: ViewState[] = ['DASHBOARD', 'TRANSACTIONS', 'PLANNING', 'SETTINGS'];
+  const validViews: ViewState[] = ['DASHBOARD', 'TRANSACTIONS', 'PLANNING', 'SETTINGS', 'GOALS', 'DEBTS'];
   const stored = readStorage<ViewState>(STORAGE_KEYS.VIEW);
   if (stored && validViews.includes(stored)) {
     return stored;
@@ -215,6 +227,15 @@ const App: React.FC = () => {
 
   const [recurringDeleteTarget, setRecurringDeleteTarget] = useState<Transaction | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilter>(getInitialDateFilter);
+
+  // Goals & Debts State
+  const [goals, setGoals] = useState<Goal[]>(() => readStorage<Goal[]>(STORAGE_KEYS.GOALS) || []);
+  const [debts, setDebts] = useState<Debt[]>(() => readStorage<Debt[]>(STORAGE_KEYS.DEBTS) || []);
+  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // --- INITIAL DATA FETCH & MIGRATION (Firestore) ---
   useEffect(() => {
@@ -385,6 +406,14 @@ const App: React.FC = () => {
   useEffect(() => {
     writeStorage(STORAGE_KEYS.DATE_FILTER, dateFilter);
   }, [dateFilter]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.GOALS, goals);
+  }, [goals]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.DEBTS, debts);
+  }, [debts]);
 
   useEffect(() => {
     if (!isBrowser) return;
@@ -771,6 +800,32 @@ const App: React.FC = () => {
     });
   };
 
+  // --- GOALS HANDLERS ---
+  const handleSaveGoal = (goal: Goal) => {
+    setGoals((prev) => {
+      const exists = prev.find((g) => g.id === goal.id);
+      if (exists) return prev.map((g) => (g.id === goal.id ? goal : g));
+      return [...prev, goal];
+    });
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    setGoals((prev) => prev.filter((g) => g.id !== id));
+  };
+
+  // --- DEBTS HANDLERS ---
+  const handleSaveDebt = (debt: Debt) => {
+    setDebts((prev) => {
+      const exists = prev.find((d) => d.id === debt.id);
+      if (exists) return prev.map((d) => (d.id === debt.id ? debt : d));
+      return [...prev, debt];
+    });
+  };
+
+  const handleDeleteDebt = (id: string) => {
+    setDebts((prev) => prev.filter((d) => d.id !== id));
+  };
+
   const handleAddCategory = async (category: Category) => {
     if (!session) return;
     setCategories((prev) => [...prev, category]);
@@ -849,98 +904,194 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
-      <header className="fixed top-0 w-full z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-5xl mx-auto px-3 sm:px-4 h-12 sm:h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 sm:w-8 sm:h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-lg flex-shrink-0">F</div>
-            <span className="font-bold text-lg tracking-tight hidden sm:block">FinanzaFlow</span>
-            <button onClick={() => setIsAIModalOpen(true)} className="ml-1 sm:ml-3 px-2 sm:px-3 py-1 sm:py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[10px] sm:text-xs font-bold rounded-full shadow-lg flex items-center gap-1 hover:brightness-110 transition-all animate-pulse"><Sparkles size={12} className="text-yellow-300" /><span className="hidden xs:inline">Asistente IA</span></button>
-          </div>
-          <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
-            {session?.email && <span className="hidden xs:block text-[10px] sm:text-xs text-slate-500 font-medium truncate max-w-[80px] sm:max-w-[150px] mr-1">{session.email.split('@')[0]}</span>}
-            <button onClick={() => setDarkMode(!darkMode)} className="p-1.5 sm:p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-            <button onClick={handleLogout} className="p-1.5 sm:p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg"><LogOut size={18} /></button>
-          </div>
-        </div>
-        <div className="max-w-5xl mx-auto px-3 sm:px-4 h-10 flex items-center justify-center border-t border-slate-100 dark:border-slate-800/50">
-          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 sm:p-1">
-            <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronLeft size={16} /></button>
-            <span className="px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize w-28 sm:w-32 text-center select-none">{monthName}</span>
-            <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronRight size={16} /></button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200 flex">
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
 
-      <main className="max-w-5xl mx-auto px-3 sm:px-4 pt-[5.5rem] sm:pt-[6.5rem] pb-24">
-
-        {view === 'DASHBOARD' && (
-          <>
-            <QuickActionPanel onAddExpense={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.EXPENSE); setIsModalOpen(true); }} onAddIncome={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.INCOME); setIsModalOpen(true); }} onOpenAI={() => setIsAIModalOpen(true)} onAddCategory={() => setIsCategoryModalOpen(true)} />
-            <Dashboard transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
-          </>
-        )}
-
-        {view === 'TRANSACTIONS' && (
-          <div className="animate-fade-in">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold">Movimientos</h2>
-              <span className="text-sm text-slate-500">{filteredTransactions.length} registros</span>
-            </div>
-            <TransactionList transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
-          </div>
-        )}
-
-        {view === 'SETTINGS' && (
-          <div className="animate-fade-in pb-20 space-y-4">
-            <div className="bg-gradient-to-br from-primary-600 to-indigo-700 p-4 rounded-xl shadow-lg text-white mb-2">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-xl font-bold">{session?.email?.[0].toUpperCase() || 'U'}</div>
-                <div className="min-w-0">
-                  <p className="text-[10px] uppercase tracking-widest opacity-70 font-bold">Perfil Activo</p>
-                  <p className="text-sm font-bold truncate">{session?.email}</p>
-                  <p className="text-[10px] opacity-80 mt-0.5">Sincronizado con Google Firebase ✅</p>
-                </div>
+      {/* Sidebar */}
+      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-full w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {/* Sidebar Header */}
+        <div className="p-5 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center text-white font-bold text-base shadow-lg">F</div>
+              <div>
+                <span className="font-bold text-base tracking-tight block">FinanzaFlow</span>
+                <span className="text-[10px] text-slate-400 font-medium">Control financiero</span>
               </div>
             </div>
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400"><FileText size={20} /></div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Documentación</h3>
-                  <p className="text-xs text-slate-500">Guía y planificación</p>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 lg:hidden"><X size={18} /></button>
+          </div>
+        </div>
+
+        {/* Sidebar Nav */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
+          {[
+            { id: 'DASHBOARD' as ViewState, label: 'Inicio', icon: LayoutDashboard, color: 'text-primary-600' },
+            { id: 'GOALS' as ViewState, label: 'Metas', icon: Trophy, color: 'text-amber-500' },
+            { id: 'DEBTS' as ViewState, label: 'Deudas', icon: TrendingDown, color: 'text-rose-500' },
+            { id: 'TRANSACTIONS' as ViewState, label: 'Historial', icon: List, color: 'text-indigo-500' },
+            { id: 'PLANNING' as ViewState, label: 'Planificación', icon: FileText, color: 'text-violet-500' },
+            { id: 'SETTINGS' as ViewState, label: 'Ajustes', icon: Settings, color: 'text-slate-500' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => { setView(item.id); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                view === item.id
+                  ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <item.icon size={20} className={view === item.id ? 'text-primary-600' : item.color} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        {/* Sidebar AI Button */}
+        <div className="px-3 pb-2">
+          <button
+            onClick={() => { setIsAIModalOpen(true); setSidebarOpen(false); }}
+            className="w-full py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-110 transition-all"
+          >
+            <Sparkles size={14} className="text-yellow-300" />
+            Asistente IA
+          </button>
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+              {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <span className="text-xs text-slate-400 truncate flex-1">{session?.email?.split('@')[0] || 'Usuario'}</span>
+            <button onClick={handleLogout} className="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all" title="Cerrar sesión"><LogOut size={16} /></button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+        {/* Header */}
+        <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+          <div className="px-3 sm:px-5 h-12 sm:h-14 flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden">
+                <Menu size={20} />
+              </button>
+              <span className="font-bold text-lg tracking-tight lg:hidden">FinanzaFlow</span>
+              {/* Month Selector */}
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 sm:p-1 ml-1 sm:ml-3">
+                <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronLeft size={16} /></button>
+                <span className="px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize w-28 sm:w-32 text-center select-none">{monthName}</span>
+                <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronRight size={16} /></button>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+              <button onClick={() => setIsAIModalOpen(true)} className="hidden lg:flex px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[10px] sm:text-xs font-bold rounded-full shadow-lg items-center gap-1 hover:brightness-110 transition-all"><Sparkles size={12} className="text-yellow-300" />Asistente IA</button>
+              {session?.email && <span className="hidden lg:block text-[10px] sm:text-xs text-slate-500 font-medium truncate max-w-[100px]">{session.email.split('@')[0]}</span>}
+              <button onClick={() => setDarkMode(!darkMode)} className="p-1.5 sm:p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+              <button onClick={handleLogout} className="p-1.5 sm:p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg lg:hidden"><LogOut size={18} /></button>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 px-3 sm:px-5 pt-4 sm:pt-6 pb-28 max-w-5xl w-full mx-auto">
+          {view === 'DASHBOARD' && (
+            <>
+              <QuickActionPanel onAddExpense={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.EXPENSE); setIsModalOpen(true); }} onAddIncome={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.INCOME); setIsModalOpen(true); }} onOpenAI={() => setIsAIModalOpen(true)} onAddCategory={() => setIsCategoryModalOpen(true)} />
+              <Dashboard transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
+            </>
+          )}
+
+          {view === 'TRANSACTIONS' && (
+            <div className="animate-fade-in">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">Movimientos</h2>
+                <span className="text-sm text-slate-500">{filteredTransactions.length} registros</span>
+              </div>
+              <TransactionList transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
+            </div>
+          )}
+
+          {view === 'GOALS' && (
+            <GoalsView
+              goals={goals}
+              onAdd={() => { setEditingGoal(null); setIsGoalModalOpen(true); }}
+              onEdit={(g) => { setEditingGoal(g); setIsGoalModalOpen(true); }}
+              onDelete={handleDeleteGoal}
+            />
+          )}
+
+          {view === 'DEBTS' && (
+            <DebtsView
+              debts={debts}
+              onAdd={() => { setEditingDebt(null); setIsDebtModalOpen(true); }}
+              onEdit={(d) => { setEditingDebt(d); setIsDebtModalOpen(true); }}
+              onDelete={handleDeleteDebt}
+            />
+          )}
+
+          {view === 'SETTINGS' && (
+            <div className="animate-fade-in pb-20 space-y-4">
+              <div className="bg-gradient-to-br from-primary-600 to-indigo-700 p-4 rounded-xl shadow-lg text-white mb-2">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-xl font-bold">{session?.email?.[0].toUpperCase() || 'U'}</div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-widest opacity-70 font-bold">Perfil Activo</p>
+                    <p className="text-sm font-bold truncate">{session?.email}</p>
+                    <p className="text-[10px] opacity-80 mt-0.5">Sincronizado con Google Firebase ✅</p>
+                  </div>
                 </div>
               </div>
-              <button onClick={() => setView('PLANNING')} className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors">Abrir</button>
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400"><FileText size={20} /></div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Documentación</h3>
+                    <p className="text-xs text-slate-500">Guía y planificación</p>
+                  </div>
+                </div>
+                <button onClick={() => setView('PLANNING')} className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors">Abrir</button>
+              </div>
+              <CategorySettings categories={categories} onAdd={handleAddCategory} onUpdate={handleUpdateCategory} onDelete={handleDeleteCategory} onOpenAddModal={() => setIsCategoryModalOpen(true)} />
             </div>
-            <CategorySettings categories={categories} onAdd={handleAddCategory} onUpdate={handleUpdateCategory} onDelete={handleDeleteCategory} onOpenAddModal={() => setIsCategoryModalOpen(true)} />
+          )}
+
+          {view === 'PLANNING' && (
+            <div className="animate-fade-in">
+              <button onClick={() => setView('SETTINGS')} className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-sm mb-6 hover:underline"><ChevronLeft size={16} /> Volver a Ajustes</button>
+              <PlanningDocs />
+            </div>
+          )}
+        </main>
+
+        {/* Bottom Nav (Mobile) */}
+        <nav className="fixed bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 h-16 pb-safe z-30 lg:hidden">
+          <div className="grid grid-cols-5 h-full max-w-lg mx-auto relative px-2">
+            <button onClick={() => setView('DASHBOARD')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'DASHBOARD' ? 'text-primary-600' : 'text-slate-400'}`}><LayoutDashboard size={22} /><span className="text-[10px] font-bold">Inicio</span></button>
+            <button onClick={() => setView('GOALS')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'GOALS' ? 'text-primary-600' : 'text-slate-400'}`}><Trophy size={22} /><span className="text-[10px] font-bold">Metas</span></button>
+            <div className="relative flex justify-center items-center"><button onClick={() => { setEditingTransaction(null); setIsModalOpen(true); }} className="absolute -top-6 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-xl flex items-center justify-center ring-4 ring-white dark:ring-slate-900" aria-label="Añadir"><Plus size={28} /></button></div>
+            <button onClick={() => setView('DEBTS')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'DEBTS' ? 'text-primary-600' : 'text-slate-400'}`}><CreditCard size={22} /><span className="text-[10px] font-bold">Deudas</span></button>
+            <button onClick={() => setView('SETTINGS')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'SETTINGS' ? 'text-primary-600' : 'text-slate-400'}`}><Settings size={22} /><span className="text-[10px] font-bold">Ajustes</span></button>
           </div>
-        )}
+        </nav>
+      </div>
 
-        {view === 'PLANNING' && (
-          <div className="animate-fade-in">
-            <button onClick={() => setView('SETTINGS')} className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-sm mb-6 hover:underline"><ChevronLeft size={16} /> Volver a Ajustes</button>
-            <PlanningDocs />
-          </div>
-        )}
-      </main>
-
-      <nav className="fixed bottom-0 w-full bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 h-16 pb-safe z-50">
-        <div className="grid grid-cols-5 h-full max-w-lg mx-auto relative px-2">
-          <button onClick={() => setView('DASHBOARD')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'DASHBOARD' ? 'text-primary-600' : 'text-slate-400'}`}><LayoutDashboard size={22} /><span className="text-[10px] font-bold">Inicio</span></button>
-          <button onClick={() => setView('TRANSACTIONS')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'TRANSACTIONS' ? 'text-primary-600' : 'text-slate-400'}`}><List size={22} /><span className="text-[10px] font-bold">Historial</span></button>
-          <div className="relative flex justify-center items-center"><button onClick={() => { setEditingTransaction(null); setIsModalOpen(true); }} className="absolute -top-6 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-xl flex items-center justify-center ring-4 ring-white dark:ring-slate-900" aria-label="Añadir"><Plus size={28} /></button></div>
-          <button onClick={() => setIsCalculatorOpen(true)} className={`flex flex-col items-center justify-center gap-1 transition-colors ${isCalculatorOpen ? 'text-primary-600' : 'text-slate-400'}`}><Calculator size={22} /><span className="text-[10px] font-bold">Cálculo</span></button>
-          <button onClick={() => setView('SETTINGS')} className={`flex flex-col items-center justify-center gap-1 transition-colors ${view === 'SETTINGS' ? 'text-primary-600' : 'text-slate-400'}`}><Settings size={22} /><span className="text-[10px] font-bold">Ajustes</span></button>
-        </div>
-      </nav>
-
+      {/* Modals */}
       <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={accounts} initialData={editingTransaction} defaultType={defaultFormType} />
       <FloatingCalculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
       <ConfirmationModal isOpen={confirmDialog.isOpen} onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))} onConfirm={confirmDialog.onConfirm} title={confirmDialog.title} message={confirmDialog.message} isDestructive={confirmDialog.isDestructive} />
       <AIAssistantModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} transactions={transactions} categories={categories} accounts={accounts} onExecuteContext={handleAIExecute} />
       <RecurringDeleteModal isOpen={!!recurringDeleteTarget} onClose={() => setRecurringDeleteTarget(null)} onDeleteInstance={() => recurringDeleteTarget && performDeleteInstance(recurringDeleteTarget)} onDeleteSeries={() => recurringDeleteTarget && performDeleteSeries(recurringDeleteTarget)} />
       <CategoryFormModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onAdd={handleAddCategory} />
+      <GoalFormModal isOpen={isGoalModalOpen} onClose={() => setIsGoalModalOpen(false)} onSave={handleSaveGoal} initialData={editingGoal} />
+      <DebtFormModal isOpen={isDebtModalOpen} onClose={() => setIsDebtModalOpen(false)} onSave={handleSaveDebt} initialData={editingDebt} />
     </div>
   );
 };
