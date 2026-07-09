@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Transaction, TransactionType, Category, Account, Frequency, PeriodType } from '../types';
-import { generateId, getQuincena } from '../utils';
+import { Transaction, TransactionType, Category, Account } from '../types';
+import { generateId } from '../utils';
 import { X, Check, Repeat, CalendarClock, AlertCircle, Plus, Tag } from 'lucide-react';
 
 interface TransactionFormProps {
@@ -10,8 +10,7 @@ interface TransactionFormProps {
     transaction: Transaction,
     recurrenceOptions?: {
       createRule: boolean;
-      frequency: Frequency;
-      quincenaN?: 'Q1' | 'Q2';
+      frequency: 'MONTHLY';
       updateFuture: boolean;
     }
   ) => void;
@@ -46,12 +45,6 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
 
   // Recurrence State
   const [isRecurring, setIsRecurring] = useState(initialData?.isRecurring || false);
-  const [frequency, setFrequency] = useState<Frequency>('MONTHLY');
-
-  const initialQ = getQuincena(initialData?.date || new Date().toISOString().split('T')[0]);
-  const [quincenaType, setQuincenaType] = useState<'Q1' | 'Q2'>(
-    initialQ === PeriodType.Q1 ? 'Q1' : 'Q2'
-  );
 
   // Edit Mode State
   const [updateFuture, setUpdateFuture] = useState(false);
@@ -73,43 +66,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     }
   };
 
-  // Handle date change -> update Q type automatically
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newDate = e.target.value;
-    setDate(newDate);
-    if (newDate) {
-      const q = getQuincena(newDate);
-      setQuincenaType(q === PeriodType.Q1 ? 'Q1' : 'Q2');
-    }
-  };
-
-  // Handle Q type change -> update Date automatically
-  const handleQuincenaTypeChange = (newQ: 'Q1' | 'Q2') => {
-    setQuincenaType(newQ);
-
-    // Logic: Shift date by +/- 15 days to land in the other quincena
-    const d = new Date(date + 'T00:00:00');
-    const day = d.getDate();
-
-    // Create new date object
-    const newDateObj = new Date(d);
-
-    if (newQ === 'Q1' && day > 15) {
-      // Move to Q1 (subtract 15 days roughly, or set to same day index if possible)
-      // Simple logic: subtract 15 days
-      newDateObj.setDate(day - 15);
-    } else if (newQ === 'Q2' && day <= 15) {
-      // Move to Q2 (add 15 days)
-      newDateObj.setDate(day + 15);
-    }
-
-    // Check if we accidentally jumped month (e.g. Feb 16 + 15 = Mar 3)
-    // If we changed month, clamp to end of original month
-    if (newDateObj.getMonth() !== d.getMonth()) {
-      newDateObj.setDate(0); // Last day of previous month (which is the intended month)
-    }
-
-    setDate(newDateObj.toISOString().split('T')[0]);
+    setDate(e.target.value);
   };
 
   const handleCreateCategory = () => {
@@ -154,10 +112,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
     };
 
     onSave(transaction, {
-      createRule: isRecurring && !(initialData?.isRecurring), // Create rule if enabling recurring on existing
-      frequency,
-      quincenaN: frequency === 'BIWEEKLY' ? quincenaType : undefined,
-      updateFuture, // Valid if editing an existing recurring transaction
+      createRule: isRecurring && !(initialData?.isRecurring),
+      frequency: 'MONTHLY',
+      updateFuture,
     });
 
     onClose();
@@ -366,178 +323,75 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
             />
           </div>
 
-          {/* Recurring Section */}
-          <div className="space-y-3">
-            {/* If NEW or Not Recurring: Simple Toggle */}
-            {(!initialData || !initialData.isRecurring) && (
-              <div className="p-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`p-2 rounded-full ${isRecurring ? 'bg-primary-100 text-primary-600' : 'bg-slate-200 text-slate-500'}`}
-                  >
-                    <Repeat size={18} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                      Pago Recurrente
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Se agregará automáticamente en el futuro.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={isRecurring}
-                    onChange={(e) => setIsRecurring(e.target.checked)}
-                    className="w-5 h-5 rounded text-primary-600 focus:ring-primary-500"
-                  />
+          {/* Recurring Toggle */}
+          {(!initialData || !initialData.isRecurring) && (
+            <div className="p-3 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`p-2 rounded-full ${isRecurring ? 'bg-primary-100 text-primary-600' : 'bg-slate-200 text-slate-500'}`}
+                >
+                  <Repeat size={18} />
                 </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                    Pago Recurrente
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Se agregará automáticamente cada mes.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={isRecurring}
+                  onChange={(e) => setIsRecurring(e.target.checked)}
+                  className="w-5 h-5 rounded text-primary-600 focus:ring-primary-500"
+                />
+              </div>
+            </div>
+          )}
 
-                {isRecurring && (
-                  <div className="mt-3 pl-12 space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">
-                        Frecuencia
-                      </label>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setFrequency('BIWEEKLY')}
-                          className={`px-3 py-1.5 text-xs rounded border transition-colors ${frequency === 'BIWEEKLY' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'}`}
-                        >
-                          Quincenal
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFrequency('MONTHLY')}
-                          className={`px-3 py-1.5 text-xs rounded border transition-colors ${frequency === 'MONTHLY' ? 'bg-primary-600 text-white border-primary-600' : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'}`}
-                        >
-                          Mensual
-                        </button>
-                      </div>
+          {/* If EDITING a Recurring Transaction: Edit options */}
+          {initialData && initialData.isRecurring && initialData.recurrenceRuleId && (
+            <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 dark:border-amber-900/30">
+              <div className="flex items-start gap-3">
+                <CalendarClock className="text-amber-600 mt-1" size={18} />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                    Es una transacción recurrente
+                  </p>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editMode"
+                      checked={!updateFuture}
+                      onChange={() => setUpdateFuture(false)}
+                      className="text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">
+                      Editar solo esta (Instancia única)
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="editMode"
+                      checked={updateFuture}
+                      onChange={() => setUpdateFuture(true)}
+                      className="text-amber-600 focus:ring-amber-500"
+                    />
+                    <div className="text-sm text-slate-700 dark:text-slate-300">
+                      <span>Actualizar regla futura</span>
+                      <p className="text-[10px] text-slate-500 block">
+                        No afecta meses anteriores (Crea nueva regla).
+                      </p>
                     </div>
-
-                    {/* Explicit Quincena Selection */}
-                    {frequency === 'BIWEEKLY' && (
-                      <div className="bg-primary-50 dark:bg-primary-900/20 p-2 rounded-md border border-primary-100 dark:border-primary-800/30">
-                        <label className="block text-xs font-medium text-primary-700 dark:text-primary-300 mb-1">
-                          ¿En qué quincena?
-                        </label>
-                        <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="quincenaN"
-                              checked={quincenaType === 'Q1'}
-                              onChange={() => handleQuincenaTypeChange('Q1')}
-                              className="text-primary-600 focus:ring-primary-500"
-                            />
-                            <span className="text-xs text-slate-700 dark:text-slate-300">
-                              1ª (Días 1-15)
-                            </span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="quincenaN"
-                              checked={quincenaType === 'Q2'}
-                              onChange={() => handleQuincenaTypeChange('Q2')}
-                              className="text-primary-600 focus:ring-primary-500"
-                            />
-                            <span className="text-xs text-slate-700 dark:text-slate-300">
-                              2ª (Días 16+)
-                            </span>
-                          </label>
-                        </div>
-                        <p className="text-[10px] text-primary-600/70 mt-1">
-                          * La fecha se ajustará para coincidir con la quincena.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* If EDITING a Recurring Transaction: Complex Options */}
-            {initialData && initialData.isRecurring && initialData.recurrenceRuleId && (
-              <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/10 dark:border-amber-900/30">
-                <div className="flex items-start gap-3">
-                  <CalendarClock className="text-amber-600 mt-1" size={18} />
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-                      Es una transacción recurrente
-                    </p>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="editMode"
-                        checked={!updateFuture}
-                        onChange={() => setUpdateFuture(false)}
-                        className="text-amber-600 focus:ring-amber-500"
-                      />
-                      <span className="text-sm text-slate-700 dark:text-slate-300">
-                        Editar solo esta (Instancia única)
-                      </span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="editMode"
-                        checked={updateFuture}
-                        onChange={() => setUpdateFuture(true)}
-                        className="text-amber-600 focus:ring-amber-500"
-                      />
-                      <div className="text-sm text-slate-700 dark:text-slate-300">
-                        <span>Actualizar regla futura</span>
-                        <p className="text-[10px] text-slate-500 block">
-                          No afecta meses anteriores (Crea nueva regla).
-                        </p>
-                      </div>
-                    </label>
-
-                    {updateFuture && (
-                      <div className="mt-2 ml-6 space-y-2">
-                        <div>
-                          <span className="text-xs text-slate-500 mr-2">Frecuencia:</span>
-                          <select
-                            value={frequency}
-                            onChange={(e) => setFrequency(e.target.value as Frequency)}
-                            className="text-xs p-1 rounded bg-white dark:bg-slate-800 border"
-                          >
-                            <option value="MONTHLY">Mensual</option>
-                            <option value="BIWEEKLY">Quincenal</option>
-                          </select>
-                        </div>
-
-                        {/* Edit Future: Allow changing Quincena type */}
-                        {frequency === 'BIWEEKLY' && (
-                          <div className="flex gap-2 text-xs">
-                            <button
-                              type="button"
-                              onClick={() => handleQuincenaTypeChange('Q1')}
-                              className={`px-2 py-1 rounded border ${quincenaType === 'Q1' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-slate-700'}`}
-                            >
-                              1ª Quincena
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleQuincenaTypeChange('Q2')}
-                              className={`px-2 py-1 rounded border ${quincenaType === 'Q2' ? 'bg-primary-600 text-white' : 'bg-white dark:bg-slate-700'}`}
-                            >
-                              2ª Quincena
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  </label>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           <button
             type="submit"

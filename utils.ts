@@ -1,4 +1,4 @@
-import { PeriodType, Transaction, TransactionType, RecurrenceRule } from './types';
+import { Transaction, TransactionType, RecurrenceRule } from './types';
 
 export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('es-MX', {
@@ -47,11 +47,6 @@ export const roundToTwo = (num: number): number => {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 };
 
-export const getQuincena = (dateStr: string): PeriodType => {
-  const day = new Date(dateStr + 'T00:00:00').getDate();
-  return day <= 15 ? PeriodType.Q1 : PeriodType.Q2;
-};
-
 // Generates a unique ID using crypto.randomUUID() if available, otherwise falls back to a robust random string
 export const generateId = (): string => {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -63,20 +58,11 @@ export const generateId = (): string => {
 export const filterTransactions = (
   transactions: Transaction[],
   month: number,
-  year: number,
-  period: PeriodType | 'ALL'
+  year: number
 ): Transaction[] => {
   return transactions.filter((t) => {
-    // Fix date parsing for timezones by appending T00:00:00
     const d = new Date(t.date + 'T00:00:00');
-    const isSameMonth = d.getMonth() === month && d.getFullYear() === year;
-
-    if (!isSameMonth) return false;
-
-    if (period === 'ALL' || period === PeriodType.MONTH) return true;
-
-    const tPeriod = d.getDate() <= 15 ? PeriodType.Q1 : PeriodType.Q2;
-    return tPeriod === period;
+    return d.getMonth() === month && d.getFullYear() === year;
   });
 };
 
@@ -125,24 +111,9 @@ export const generateMissingRecurringTransactions = (
       if (ruleEnd < periodStart) return;
     }
 
-    // 2. Determine expected dates for this month
-    const expectedDates: number[] = [];
-
-    // Logic for Monthly AND Biweekly
-    // Note: Per requirements, 'BIWEEKLY' now strictly means "Appears once in the selected quincena".
-
-    // Adjust day based on Quincena if frequency is BIWEEKLY
-    let day = Math.min(rule.baseDateDay, daysInMonth);
-
-    if (rule.frequency === 'BIWEEKLY' && rule.quincenaN) {
-      if (rule.quincenaN === 'Q1' && day > 15) {
-        day = 15; // Cap at end of Q1
-      } else if (rule.quincenaN === 'Q2' && day <= 15) {
-        day = Math.min(day + 15, daysInMonth); // Shift to Q2
-      }
-    }
-
-    expectedDates.push(day);
+    // 2. Single expected date: the base day clamped to month length
+    const day = Math.min(rule.baseDateDay, daysInMonth);
+    const expectedDates: number[] = [day];
 
     // 3. For each expected date, check if a transaction linked to this rule exists
     expectedDates.forEach((day) => {

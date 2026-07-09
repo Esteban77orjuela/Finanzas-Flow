@@ -17,7 +17,6 @@ import {
   Account,
   ViewState,
   DateFilter,
-  PeriodType,
   TransactionType,
   RecurrenceRule,
   Frequency,
@@ -108,18 +107,8 @@ const sanitizeDateFilter = (value: unknown, fallback: DateFilter): DateFilter =>
       : fallback.month;
   const year =
     typeof candidate.year === 'number' && candidate.year > 1900 ? candidate.year : fallback.year;
-  const validPeriods: DateFilter['period'][] = [
-    'ALL',
-    PeriodType.Q1,
-    PeriodType.Q2,
-    PeriodType.MONTH,
-  ];
-  const period =
-    candidate.period && validPeriods.includes(candidate.period)
-      ? candidate.period
-      : fallback.period;
 
-  return { month, year, period };
+  return { month, year };
 };
 
 const getInitialDateFilter = (): DateFilter => {
@@ -127,7 +116,6 @@ const getInitialDateFilter = (): DateFilter => {
   const fallback: DateFilter = {
     month: now.getMonth(),
     year: now.getFullYear(),
-    period: 'ALL',
   };
 
   const stored = readStorage<DateFilter>(STORAGE_KEYS.DATE_FILTER);
@@ -254,7 +242,6 @@ const App: React.FC = () => {
           return {
             id: d.id,
             frequency: data.frequency,
-            quincenaN: data.quincena_n,
             startDate: data.start_date,
             endDate: data.end_date,
             amount: data.amount,
@@ -319,7 +306,6 @@ const App: React.FC = () => {
           for (const r of localRules) {
             await setDoc(doc(db, 'recurrence_rules', r.id), {
               frequency: r.frequency,
-              quincena_n: r.quincenaN ?? null,
               start_date: r.startDate,
               end_date: r.endDate ?? null,
               amount: r.amount,
@@ -485,7 +471,6 @@ const App: React.FC = () => {
         if (action.type === 'RECURRING') {
           const ruleId = generateId();
           const dayNum = parseInt(validDate.split('-')[2]) || 1;
-          const qN = dayNum <= 15 ? 'Q1' : 'Q2';
 
           const rule: RecurrenceRule = {
             id: ruleId,
@@ -494,7 +479,6 @@ const App: React.FC = () => {
             categoryId: cat.id,
             accountId: acc.id,
             frequency: action.frequency || 'MONTHLY',
-            quincenaN: action.frequency === 'BIWEEKLY' ? qN : undefined,
             startDate: validDate,
             note: (action.description || 'Gasto IA') + ' (IA)',
             baseDateDay: dayNum,
@@ -502,7 +486,6 @@ const App: React.FC = () => {
 
           await setDoc(doc(db, 'recurrence_rules', rule.id), {
             frequency: rule.frequency,
-            quincena_n: rule.quincenaN ?? null,
             start_date: rule.startDate,
             amount: rule.amount,
             type: rule.type,
@@ -552,7 +535,7 @@ const App: React.FC = () => {
   };
 
   const filteredTransactions = useMemo(
-    () => filterTransactions(transactions, dateFilter.month, dateFilter.year, dateFilter.period),
+    () => filterTransactions(transactions, dateFilter.month, dateFilter.year),
     [transactions, dateFilter]
   );
 
@@ -566,7 +549,6 @@ const App: React.FC = () => {
     options?: {
       createRule: boolean;
       frequency: Frequency;
-      quincenaN?: 'Q1' | 'Q2';
       updateFuture: boolean;
     }
   ) => {
@@ -582,7 +564,6 @@ const App: React.FC = () => {
         const newRule: RecurrenceRule = {
           id: ruleId,
           frequency: options.frequency,
-          quincenaN: options.quincenaN,
           startDate: t.date,
           amount: t.amount,
           type: t.type,
@@ -628,7 +609,6 @@ const App: React.FC = () => {
             const newRule: RecurrenceRule = {
               id: newRuleId,
               frequency: options.frequency,
-              quincenaN: options.quincenaN,
               startDate: t.date,
               amount: t.amount,
               type: t.type,
@@ -687,7 +667,6 @@ const App: React.FC = () => {
       for (const rule of rulesToSync) {
         await setDoc(doc(db, 'recurrence_rules', rule.id), {
           frequency: rule.frequency,
-          quincena_n: rule.quincenaN ?? null,
           start_date: rule.startDate,
           end_date: rule.endDate || null,
           amount: rule.amount,
@@ -894,20 +873,11 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-5xl mx-auto px-3 sm:px-4 pt-[5.5rem] sm:pt-[6.5rem] pb-24">
-        {(view === 'DASHBOARD' || view === 'TRANSACTIONS') && (
-          <div className="flex justify-center mb-4 sm:mb-8">
-            <div className="bg-white dark:bg-slate-800 p-1 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex max-w-full overflow-x-auto">
-              <button onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q1 }))} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q1 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600' : 'text-slate-500'}`}>1ª Quincena</button>
-              <button onClick={() => setDateFilter((prev) => ({ ...prev, period: PeriodType.Q2 }))} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${dateFilter.period === PeriodType.Q2 ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600' : 'text-slate-500'}`}>2ª Quincena</button>
-              <button onClick={() => setDateFilter((prev) => ({ ...prev, period: 'ALL' }))} className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${dateFilter.period === 'ALL' ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-600' : 'text-slate-500'}`}>Mes Completo</button>
-            </div>
-          </div>
-        )}
 
         {view === 'DASHBOARD' && (
           <>
             <QuickActionPanel onAddExpense={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.EXPENSE); setIsModalOpen(true); }} onAddIncome={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.INCOME); setIsModalOpen(true); }} onOpenAI={() => setIsAIModalOpen(true)} onAddCategory={() => setIsCategoryModalOpen(true)} />
-            <Dashboard transactions={filteredTransactions} categories={categories} filter={dateFilter} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
+            <Dashboard transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
           </>
         )}
 

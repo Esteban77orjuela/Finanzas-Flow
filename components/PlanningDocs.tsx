@@ -44,7 +44,7 @@ const PlanningDocs: React.FC = () => {
                 RecurrenceRule (Regla Recurrente)
               </strong>
               <br />
-              {`{ id: string, frequency: 'MONTHLY'|'BIWEEKLY', amount: number, categoryId: FK }`}
+              {`{ id: string, frequency: 'MONTHLY', amount: number, categoryId: FK }`}
             </li>
           </ul>
         </div>
@@ -59,7 +59,7 @@ const PlanningDocs: React.FC = () => {
             <h3 className="font-bold mb-2">Dashboard (Home)</h3>
             <ul className="list-disc ml-5 text-sm text-slate-600 dark:text-slate-400">
               <li>Tarjetas de resumen (Balance, Ingresos, Gastos).</li>
-              <li>Filtro rápido: Q1, Q2, Mes.</li>
+              <li>Filtro rápido por mes completo.</li>
               <li>Gráfico de distribución de gastos.</li>
               <li>Accesos rápidos: "Agregar Transacción".</li>
             </ul>
@@ -77,7 +77,7 @@ const PlanningDocs: React.FC = () => {
             <h3 className="font-bold mb-2">Modal Agregar/Editar</h3>
             <ul className="list-disc ml-5 text-sm text-slate-600 dark:text-slate-400">
               <li>Input de Monto (grande y claro).</li>
-              <li>Selector Fecha (con lógica Q1/Q2 automática).</li>
+              <li>Selector Fecha.</li>
               <li>Selector Categoría y Cuenta.</li>
               <li>Toggle "Recurrente".</li>
             </ul>
@@ -103,8 +103,8 @@ const PlanningDocs: React.FC = () => {
             gastos diarios categorizados para saber en qué se va mi dinero.
           </p>
           <p>
-            ✅ <span className="font-bold">Esencial:</span> Como asalariado, quiero ver mis finanzas
-            divididas por quincenas (1-15 y 16-30) para administrar mejor mi sueldo.
+            ✅ <span className="font-bold">Esencial:</span> Como usuario, quiero ver mis finanzas
+            del mes completo para administrar mejor mi dinero.
           </p>
           <p>
             ✅ <span className="font-bold">Esencial:</span> Como usuario, quiero marcar gastos fijos

@@ -90,14 +90,13 @@ const AIAssistantModal: React.FC<AIAssistantModalProps> = ({
             "date": "YYYY-MM-DD",
             "categoryName": "Best match from list",
             "accountName": "Best match from list",
-            "frequency": "BIWEEKLY" | "MONTHLY",
+            "frequency": "MONTHLY",
             "confidence": 1.0
           }
         ]
         
         Rules:
         - If the user says "fijo", "cada mes", "mensual", "todos los meses", use type "RECURRING" and frequency "MONTHLY".
-        - If the user says "cada quincena", "quincenal", "el 15 y el 30" (create two rules), use type "RECURRING" and frequency "BIWEEKLY".
         - For simple expenses or one-time income, use type "TRANSACTION".
       `;
 
