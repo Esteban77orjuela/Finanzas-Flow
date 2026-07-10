@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if the requesting user owns the document
+    function isOwner() {
+      return request.auth != null && request.auth.uid == resource.data.user_id;
+    }
+
+    // Helper: check if the user is authenticated for writes
+    function canWrite() {
+      return request.auth != null && request.auth.uid == request.resource.data.user_id;
+    }
+
+    // ---- TRANSACTIONS ----
+    match /transactions/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner() && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isOwner();
+    }
+
+    // ---- CATEGORIES ----
+    match /categories/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner() && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isOwner();
+    }
+
+    // ---- ACCOUNTS ----
+    match /accounts/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner() && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isOwner();
+    }
+
+    // ---- RECURRENCE RULES ----
+    match /recurrence_rules/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner() && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isOwner();
+    }
+
+    // ---- GOALS ----
+    match /goals/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner() && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isOwner();
+    }
+
+    // ---- DEBTS ----
+    match /debts/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner() && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isOwner();
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

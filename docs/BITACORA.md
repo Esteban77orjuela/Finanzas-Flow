@@ -26,7 +26,19 @@ Registro de cambios, decisiones y estado del proyecto.
 - ✅ Build compila sin errores
 - ✅ TypeScript type-checks sin errores
 
-## [2026-07-10] Sprint 2 — UX/PWA (Fase 4)
+## [2026-07-10] Sprint 3 — Seguridad (Fase 7)
+
+### Cambios realizados
+- `firestore.rules`: reglas de seguridad para todas las colecciones (solo propietario puede leer/escribir)
+- `firestore.indexes.json`: índices compuestos para consultas por user_id + fecha/tipo
+- `envCheck.ts`: validación de variables de entorno al arrancar la app
+- `firebaseClient.ts`: integra validación de entorno con errores en consola
+- `docs/SEGURIDAD.md`: documentación de seguridad + guía de despliegue
+
+### Resultados
+- ✅ TypeScript: 0 errores
+- ✅ Tests: 30 pasan
+- ✅ Build: exitoso
 
 ### Cambios realizados
 - `components/ErrorBoundary.tsx`: captura errores de React, muestra pantalla de error con botones Reintentar/Recargar
