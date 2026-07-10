@@ -26,6 +26,29 @@ Registro de cambios, decisiones y estado del proyecto.
 - ✅ Build compila sin errores
 - ✅ TypeScript type-checks sin errores
 
+## [2026-07-10] Sprint 2 — UX/PWA (Fase 4)
+
+### Cambios realizados
+- `components/ErrorBoundary.tsx`: captura errores de React, muestra pantalla de error con botones Reintentar/Recargar
+- `components/Skeleton.tsx`: 4 componentes de skeleton (CardSkeleton, RowSkeleton, SectionSkeleton, DashboardSkeleton) con animación pulse
+- `index.tsx`: envuelve App con ErrorBoundary + registra Service Worker
+- `index.html`: meta tags PWA, manifest link, icono, viewport-fit=cover
+- `public/manifest.json`: PWA manifest (nombre, iconos, tema, standalone)
+- `public/sw.js`: Service Worker con cache-first strategy
+- `public/icon-192.svg`, `public/icon-512.svg`: iconos PWA
+- `App.tsx`: loading state ahora muestra sidebar skeleton + DashboardSkeleton
+- `tsconfig.json`: limpiado (eliminado experimentalDecorators obsoleto)
+- `types.ts`: Account.color añadido
+- `DebtsView.tsx`: title→aria-label en iconos lucide
+
+### Resultados
+- ✅ TypeScript: 0 errores
+- ✅ Tests: 30 pasan
+- ✅ Build: exitoso
+- ✅ PWA instalable (manifest + SW)
+- ✅ Error boundary funcional
+- ✅ Loading skeletons profesionales
+
 ### Commits en `main`
 
 | Hash      | Descripción                                                                |

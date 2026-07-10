@@ -17,7 +17,8 @@ export interface Account {
   id: string;
   name: string;
   type: 'CASH' | 'BANK' | 'CARD';
-  balance: number; // Calculated field in runtime, or initial balance
+  balance: number;
+  color?: string;
 }
 
 export interface RecurrenceRule {

@@ -37,6 +37,7 @@ import QuickActionPanel from './components/QuickActionPanel';
 import CategorySettings from './components/CategorySettings';
 import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
+import { DashboardSkeleton } from './components/Skeleton';
 import AuthPage from './components/AuthPage';
 import AIAssistantModal from './components/AIAssistantModal';
 import type { AIAction } from './components/AIAssistantModal';
@@ -751,9 +752,9 @@ const App: React.FC = () => {
       let acc = accounts.find((a) => a.name.toLowerCase() === action.accountName.toLowerCase());
       if (!acc) {
         const newId = generateId();
-        acc = { id: newId, name: action.accountName, balance: 0, color: '#6B7280' };
+        acc = { id: newId, name: action.accountName, balance: 0, type: 'CASH', color: '#6B7280' };
         setAccounts((prev) => [...prev, acc]);
-        await setDoc(doc(db, 'accounts', newId), { name: acc.name, balance: 0, color: acc.color, user_id: session!.uid });
+        await setDoc(doc(db, 'accounts', newId), { name: acc.name, balance: 0, type: 'CASH', color: acc.color, user_id: session!.uid });
       }
       await handleSaveTransaction({
         id: generateId(),
@@ -876,10 +877,20 @@ const App: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="font-medium text-slate-600 dark:text-slate-400 animate-pulse">Sincronizando con Google Firebase...</p>
-        <button onClick={handleLogout} className="mt-8 text-sm text-slate-400 hover:text-rose-500 underline decoration-dotted">¿Atascado? Cerrar sesión</button>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
+        <aside className="hidden lg:flex flex-col w-56 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 p-3 animate-pulse">
+          <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded mb-6" />
+          {[1, 2, 3, 4, 5].map((i) => <div key={i} className="h-10 bg-slate-200 dark:bg-slate-700 rounded mb-2" />)}
+        </aside>
+        <div className="flex-1 flex flex-col min-h-screen">
+          <header className="h-12 sm:h-14 bg-white/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 flex items-center gap-2">
+            <div className="w-8 h-8 bg-slate-200 dark:bg-slate-700 rounded lg:hidden" />
+            <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-32" />
+          </header>
+          <main className="flex-1 px-3 sm:px-5 pt-4 sm:pt-6 max-w-5xl w-full mx-auto">
+            <DashboardSkeleton />
+          </main>
+        </div>
       </div>
     );
   }

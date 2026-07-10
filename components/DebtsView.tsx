@@ -96,8 +96,8 @@ const DebtsView: React.FC<DebtsViewProps> = ({ debts, onAdd, onEdit, onDelete })
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-bold text-slate-800 dark:text-white text-base truncate">{debt.name}</h3>
-                        {isOverdue && <AlertTriangle size={14} className="text-rose-500 flex-shrink-0" title="Vencida" />}
-                        {isPaid && <ShieldCheck size={14} className="text-emerald-500 flex-shrink-0" title="Pagada" />}
+                        {isOverdue && <AlertTriangle size={14} className="text-rose-500 flex-shrink-0" aria-label="Vencida" />}
+                        {isPaid && <ShieldCheck size={14} className="text-emerald-500 flex-shrink-0" aria-label="Pagada" />}
                       </div>
                       {debt.dueDate && (
                         <div className="flex items-center gap-1 mt-1 text-xs text-slate-500">
