@@ -1,6 +1,6 @@
 import React from 'react';
 import { Transaction, TransactionType, Category } from '../types';
-import { formatCurrency } from '../utils';
+import { formatCurrency, formatCurrencyCompact } from '../utils';
 import { Edit2, Trash2, Repeat } from 'lucide-react';
 
 interface TransactionListProps {
@@ -50,11 +50,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
                   ${isIncome ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20'}`}
                 style={
                   category?.color
-                    ? { backgroundColor: `${category.color}20`, color: category.color }
+                    ? { backgroundColor: `${category.color}20` }
                     : {}
                 }
               >
-                {isIncome ? '💰' : '🏷️'}
+                {category?.icon && category.icon !== 'Tag' && category.icon !== '📌' ? category.icon : (category?.name?.charAt(0).toUpperCase() || '📌')}
               </div>
 
               <div className="min-w-0 flex-1">
@@ -81,11 +81,11 @@ const TransactionList: React.FC<TransactionListProps> = ({
 
             <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto pl-[52px] sm:pl-0">
               <span
-                className={`font-bold text-sm sm:text-base truncate max-w-[140px] sm:max-w-none ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}
-                title={formatCurrency(t.amount)}
-              >
+                className={`font-bold text-sm sm:text-base truncate max-w-[120px] sm:max-w-none ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-slate-200'}`}
+                title={formatCurrency(t.amount)}>
                 {isIncome ? '+' : '-'}
-                {formatCurrency(t.amount)}
+                <span className="sm:hidden">{formatCurrencyCompact(t.amount)}</span>
+                <span className="hidden sm:inline">{formatCurrency(t.amount)}</span>
               </span>
 
               <div className="flex gap-0.5 sm:gap-1 flex-shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">

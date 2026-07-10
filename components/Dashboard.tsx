@@ -37,13 +37,12 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ t, category, onEdit, on
     <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors group min-h-[4rem] gap-2 sm:gap-0">
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <div
-          className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-sm shadow-sm opacity-90"
+          className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-base shadow-sm opacity-90"
           style={{
             backgroundColor: category?.color ? `${category.color}15` : '#f1f5f9',
-            color: category?.color || '#64748b',
           }}
         >
-          {category?.name.charAt(0).toUpperCase() || '?'}
+          {category?.icon && category.icon !== 'Tag' && category.icon !== '📌' ? category.icon : (category?.name?.charAt(0).toUpperCase() || '📌')}
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm text-slate-800 dark:text-slate-200 truncate">
@@ -58,11 +57,11 @@ const TransactionRow: React.FC<TransactionRowProps> = ({ t, category, onEdit, on
 
       <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 w-full sm:w-auto pl-12 sm:pl-0">
         <span
-          className={`font-semibold text-sm truncate max-w-[130px] sm:max-w-none ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}
-          title={formatCurrency(t.amount)}
-        >
+          className={`font-semibold text-sm sm:text-base truncate max-w-[130px] sm:max-w-none ${isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}
+          title={formatCurrency(t.amount)}>
           {isIncome ? '+' : '-'}
-          {formatCurrency(t.amount)}
+          <span className="sm:hidden">{formatCurrencyCompact(t.amount)}</span>
+          <span className="hidden sm:inline">{formatCurrency(t.amount)}</span>
         </span>
 
         <div className="flex items-center gap-1 flex-shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">

@@ -47,6 +47,33 @@ export const roundToTwo = (num: number): number => {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 };
 
+/** Calls Groq AI to get an emoji for a category name. Returns 📌 on failure or if no key. */
+export async function getCategoryEmojiFromGroq(categoryName: string): Promise<string> {
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey || !categoryName) return '📌';
+
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: 'You are an emoji recommender for personal finance categories in Spanish. Given a category name, respond with ONLY a single emoji that best represents it. No text, no explanation, just the emoji.' },
+          { role: 'user', content: categoryName },
+        ],
+        temperature: 0.1,
+      }),
+    });
+    const data = await response.json();
+    const emoji = data.choices?.[0]?.message?.content?.trim();
+    if (emoji && emoji.match(/^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/)) return emoji;
+    return '📌';
+  } catch {
+    return '📌';
+  }
+}
+
 // Generates a unique ID using crypto.randomUUID() if available, otherwise falls back to a robust random string
 export const generateId = (): string => {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {

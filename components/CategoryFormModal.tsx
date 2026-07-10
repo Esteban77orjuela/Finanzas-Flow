@@ -27,7 +27,7 @@ const CategoryFormModal: React.FC<CategoryFormModalProps> = ({ isOpen, onClose, 
       name: name.trim(),
       type,
       color: fixedColor,
-      icon: 'Tag',
+      icon: '',
     };
 
     onAdd(newCategory);

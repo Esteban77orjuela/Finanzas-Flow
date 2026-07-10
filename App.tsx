@@ -28,6 +28,7 @@ import {
   filterTransactions,
   generateMissingRecurringTransactions,
   roundToTwo,
+  getCategoryEmojiFromGroq,
 } from './utils';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -37,7 +38,8 @@ import CategorySettings from './components/CategorySettings';
 import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
 import AuthPage from './components/AuthPage';
-import AIAssistantModal, { AIAction } from './components/AIAssistantModal';
+import AIAssistantModal from './components/AIAssistantModal';
+import type { AIAction } from './components/AIAssistantModal';
 import GoalsView from './components/GoalsView';
 import DebtsView from './components/DebtsView';
 import GoalFormModal from './components/GoalFormModal';
@@ -207,6 +209,7 @@ const App: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [defaultFormType, setDefaultFormType] = useState<TransactionType>(TransactionType.EXPENSE);
@@ -236,6 +239,7 @@ const App: React.FC = () => {
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isSyncingEmojis, setIsSyncingEmojis] = useState(false);
 
   // --- INITIAL DATA FETCH & MIGRATION (Firestore) ---
   useEffect(() => {
@@ -459,110 +463,6 @@ const App: React.FC = () => {
     }
   }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions, transactions, session]);
 
-  // --- AI EXECUTION LOGIC ---
-  const handleAIExecute = async (actions: AIAction[]) => {
-    if (!session?.uid) return;
-
-    setIsLoading(true);
-    try {
-      const uId = session.uid;
-      const newTransactions: Transaction[] = [];
-      const newRules: RecurrenceRule[] = [];
-      const freshCategories = [...categories];
-
-      for (const action of actions) {
-        let amountNum = typeof action.amount === 'string' ? parseFloat(action.amount) : action.amount;
-        if (isNaN(amountNum)) amountNum = 0;
-
-        const validDate = action.date || new Date().toISOString().split('T')[0];
-
-        let cat = freshCategories.find(c => 
-          c.name.toLowerCase().includes(action.categoryName.toLowerCase()) || 
-          action.categoryName.toLowerCase().includes(c.name.toLowerCase())
-        );
-
-        if (!cat) {
-          const newCat: Category = {
-            id: generateId(),
-            name: action.categoryName || 'Sin Categoría',
-            type: action.transactionType,
-            color: action.transactionType === TransactionType.INCOME ? '#10b981' : '#f43f5e',
-            icon: 'Tag',
-          };
-
-          await setDoc(doc(db, 'categories', newCat.id), { ...newCat, user_id: uId });
-          cat = newCat;
-          freshCategories.push(newCat);
-        }
-
-        const acc = accounts.find(a => a.name.toLowerCase().includes(action.accountName.toLowerCase())) || accounts[0];
-
-        if (action.type === 'RECURRING') {
-          const ruleId = generateId();
-          const dayNum = parseInt(validDate.split('-')[2]) || 1;
-
-          const rule: RecurrenceRule = {
-            id: ruleId,
-            amount: amountNum,
-            type: action.transactionType,
-            categoryId: cat.id,
-            accountId: acc.id,
-            frequency: action.frequency || 'MONTHLY',
-            startDate: validDate,
-            note: (action.description || 'Gasto IA') + ' (IA)',
-            baseDateDay: dayNum,
-          };
-
-          await setDoc(doc(db, 'recurrence_rules', rule.id), {
-            frequency: rule.frequency,
-            start_date: rule.startDate,
-            amount: rule.amount,
-            type: rule.type,
-            category_id: rule.categoryId,
-            account_id: rule.accountId,
-            note: rule.note,
-            base_date_day: rule.baseDateDay,
-            user_id: uId
-          });
-          newRules.push(rule);
-        } else {
-          const txId = generateId();
-          const tx: Transaction = {
-            id: txId,
-            amount: amountNum,
-            type: action.transactionType,
-            date: validDate,
-            categoryId: cat.id,
-            accountId: acc.id,
-            note: action.description || 'Transacción IA',
-            isRecurring: false,
-          };
-
-          await setDoc(doc(db, 'transactions', tx.id), {
-            amount: tx.amount,
-            type: tx.type,
-            date: tx.date,
-            category_id: tx.categoryId,
-            account_id: tx.accountId,
-            note: tx.note,
-            is_recurring: false,
-            user_id: uId
-          });
-          newTransactions.push(tx);
-        }
-      }
-
-      setCategories(freshCategories);
-      setTransactions((prev) => [...prev, ...newTransactions]);
-      setRecurrenceRules((prev) => [...prev, ...newRules]);
-    } catch (error) {
-      console.error('AI Execution Error', error);
-      alert('Error de la IA');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const filteredTransactions = useMemo(
     () => filterTransactions(transactions, dateFilter.month, dateFilter.year),
     [transactions, dateFilter]
@@ -732,6 +632,19 @@ const App: React.FC = () => {
         await updateDoc(doc(db, 'accounts', accountId), { balance: newBalance });
         setAccounts((prev) => prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a)));
       }
+
+      // FETCH EMOJI FROM GROQ IF CATEGORY HAS NO ICON
+      const firstTx = transactionsToSync[0];
+      if (firstTx) {
+        const cat = categories.find((c) => c.id === firstTx.categoryId);
+        if (cat && (!cat.icon || cat.icon === '📌' || cat.icon === 'Tag' || cat.icon.length === 1)) {
+          const emoji = await getCategoryEmojiFromGroq(cat.name);
+          if (emoji && emoji !== '📌') {
+            setCategories((prev) => prev.map((c) => (c.id === cat.id ? { ...c, icon: emoji } : c)));
+            await updateDoc(doc(db, 'categories', cat.id), { icon: emoji });
+          }
+        }
+      }
     } catch (error: any) {
       console.error('Error al guardar:', error);
       alert('Error al guardar: ' + (error?.message || 'Error desconocido. Revisa la consola (F12).'));
@@ -826,10 +739,45 @@ const App: React.FC = () => {
     setDebts((prev) => prev.filter((d) => d.id !== id));
   };
 
+  // --- AI EXECUTE ---
+  const handleAIExecute = async (actions: AIAction[]) => {
+    for (const action of actions) {
+      let cat = categories.find((c) => c.name.toLowerCase() === action.categoryName.toLowerCase());
+      if (!cat) {
+        const newId = generateId();
+        cat = { id: newId, name: action.categoryName, type: action.transactionType, color: '#6B7280', icon: '' };
+        await handleAddCategory(cat);
+      }
+      let acc = accounts.find((a) => a.name.toLowerCase() === action.accountName.toLowerCase());
+      if (!acc) {
+        const newId = generateId();
+        acc = { id: newId, name: action.accountName, balance: 0, color: '#6B7280' };
+        setAccounts((prev) => [...prev, acc]);
+        await setDoc(doc(db, 'accounts', newId), { name: acc.name, balance: 0, color: acc.color, user_id: session!.uid });
+      }
+      await handleSaveTransaction({
+        id: generateId(),
+        amount: action.amount,
+        type: action.transactionType,
+        date: action.date,
+        categoryId: cat.id,
+        accountId: acc.id,
+        note: action.description,
+        isRecurring: action.isRecurring || false,
+        recurrenceRuleId: undefined,
+      });
+    }
+  };
+
   const handleAddCategory = async (category: Category) => {
     if (!session) return;
-    setCategories((prev) => [...prev, category]);
-    await setDoc(doc(db, 'categories', category.id), { ...category, user_id: session.uid });
+    let emoji = category.icon;
+    if (!emoji || emoji === '📌' || emoji === 'Tag' || emoji.length === 1) {
+      emoji = await getCategoryEmojiFromGroq(category.name);
+    }
+    const catWithEmoji = { ...category, icon: emoji };
+    setCategories((prev) => [...prev, catWithEmoji]);
+    await setDoc(doc(db, 'categories', catWithEmoji.id), { ...catWithEmoji, user_id: session.uid });
   };
 
   const handleUpdateCategory = async (category: Category) => {
@@ -854,6 +802,39 @@ const App: React.FC = () => {
         await deleteDoc(doc(db, 'categories', id));
       },
     });
+  };
+
+  const handleSyncEmojis = async () => {
+    if (!session || !import.meta.env.VITE_GROQ_API_KEY) return;
+    setIsSyncingEmojis(true);
+    try {
+      const updatedCategories = [...categories];
+      let madeChanges = false;
+
+      for (let i = 0; i < updatedCategories.length; i++) {
+        const cat = updatedCategories[i];
+        if (!cat.icon || cat.icon === '📌' || cat.icon === 'Tag' || cat.icon.length === 1) {
+          const emoji = await getCategoryEmojiFromGroq(cat.name);
+          if (emoji && emoji !== '📌') {
+            updatedCategories[i] = { ...cat, icon: emoji };
+            await updateDoc(doc(db, 'categories', cat.id), { icon: emoji });
+            madeChanges = true;
+          }
+        }
+      }
+
+      if (madeChanges) {
+        setCategories(updatedCategories);
+        alert('¡Emoticones actualizados con éxito para tus categorías antiguas!');
+      } else {
+        alert('Todas tus categorías ya tienen sus emoticones correctos.');
+      }
+    } catch (err: any) {
+      console.error('Error al sincronizar emojis:', err);
+      alert('Hubo un error al actualizar los emoticones.');
+    } finally {
+      setIsSyncingEmojis(false);
+    }
   };
 
   const changeMonth = (delta: number) => {
@@ -1049,6 +1030,37 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
+              <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-violet-50 dark:bg-violet-900/30 rounded-lg text-violet-600 dark:text-violet-400"><Sparkles size={20} /></div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Groq AI</h3>
+                    <p className="text-xs text-slate-500">Clave API configurada en variables de entorno</p>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${import.meta.env.VITE_GROQ_API_KEY ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>{import.meta.env.VITE_GROQ_API_KEY ? 'Configurada' : 'Faltante'}</span>
+                </div>
+                {import.meta.env.VITE_GROQ_API_KEY && (
+                  <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                    <button 
+                      onClick={handleSyncEmojis}
+                      disabled={isSyncingEmojis}
+                      className="w-full py-2.5 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-bold rounded-lg hover:bg-violet-200 dark:hover:bg-violet-900/50 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isSyncingEmojis ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
+                          Analizando categorías antiguas...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={14} />
+                          Actualizar Emojis Antiguos con IA
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400"><FileText size={20} /></div>
@@ -1087,7 +1099,7 @@ const App: React.FC = () => {
       <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={accounts} initialData={editingTransaction} defaultType={defaultFormType} />
       <FloatingCalculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
       <ConfirmationModal isOpen={confirmDialog.isOpen} onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))} onConfirm={confirmDialog.onConfirm} title={confirmDialog.title} message={confirmDialog.message} isDestructive={confirmDialog.isDestructive} />
-      <AIAssistantModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} transactions={transactions} categories={categories} accounts={accounts} onExecuteContext={handleAIExecute} />
+      <AIAssistantModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} categories={categories} accounts={accounts} onExecuteContext={handleAIExecute} />
       <RecurringDeleteModal isOpen={!!recurringDeleteTarget} onClose={() => setRecurringDeleteTarget(null)} onDeleteInstance={() => recurringDeleteTarget && performDeleteInstance(recurringDeleteTarget)} onDeleteSeries={() => recurringDeleteTarget && performDeleteSeries(recurringDeleteTarget)} />
       <CategoryFormModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onAdd={handleAddCategory} />
       <GoalFormModal isOpen={isGoalModalOpen} onClose={() => setIsGoalModalOpen(false)} onSave={handleSaveGoal} initialData={editingGoal} />
