@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   collection, 
@@ -233,13 +233,14 @@ const App: React.FC = () => {
         console.warn('[FinanzaFlow] Sincronizando con Firestore...');
 
         // Parallel Fetch from Firestore
-        const [catSnap, rulesSnap, transSnap, accSnap, goalsSnap, debtsSnap] = await Promise.all([
+        const [catSnap, rulesSnap, transSnap, accSnap, goalsSnap, debtsSnap, exceptionsSnap] = await Promise.all([
           getDocs(query(collection(db, 'categories'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'recurrence_rules'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'transactions'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'accounts'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'goals'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'debts'), where('user_id', '==', session.uid))),
+          getDocs(query(collection(db, 'recurrence_exceptions'), where('user_id', '==', session.uid))),
         ]);
 
         const mappedCategories: Category[] = catSnap.docs.map(d => {
@@ -292,6 +293,24 @@ const App: React.FC = () => {
           const data = d.data();
           return { id: d.id, name: data.name, totalAmount: data.totalAmount, paidAmount: data.paidAmount, dueDate: data.dueDate, notes: data.notes, color: data.color, createdAt: data.createdAt };
         });
+
+        // Load recurrence exceptions from Firestore
+        const mappedExceptions: RecurrenceException[] = exceptionsSnap.docs.map(d => {
+          const data = d.data();
+          return { ruleId: data.ruleId, date: data.date };
+        });
+        // Merge with any local ones not yet synced
+        const localExceptions = readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) || [];
+        const mergedExceptions = [...mappedExceptions];
+        for (const le of localExceptions) {
+          const alreadyInFirestore = mappedExceptions.some(e => e.ruleId === le.ruleId && e.date === le.date);
+          if (!alreadyInFirestore) {
+            mergedExceptions.push(le);
+            // Sync missing local exception to Firestore
+            const exId = `${le.ruleId}_${le.date}`;
+            await setDoc(doc(db, 'recurrence_exceptions', exId), { ...le, user_id: session.uid }).catch(() => {});
+          }
+        }
 
         // --- LOCAL MIGRATION LOGIC (If Firestore is empty) ---
         const localTrans = readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
@@ -382,7 +401,7 @@ const App: React.FC = () => {
         setTransactions(finalTrans);
         setGoals(finalGoals);
         setDebts(finalDebts);
-        setRecurrenceExceptions(readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) || []);
+        setRecurrenceExceptions(mergedExceptions);
       } catch (err: any) {
         console.error('Error inicializando Firestore:', err);
         setInitError(err.message);
@@ -442,15 +461,29 @@ const App: React.FC = () => {
     writeStorage(STORAGE_KEYS.DARK_MODE, darkMode);
   }, [darkMode]);
 
+  // Keep a stable ref of current transactions to avoid re-triggering the recurrence effect on every transaction change
+  const transactionsRef = useRef<Transaction[]>(transactions);
+  useEffect(() => {
+    transactionsRef.current = transactions;
+  }, [transactions]);
+
+  const exceptionsRef = useRef<RecurrenceException[]>(recurrenceExceptions);
+  useEffect(() => {
+    exceptionsRef.current = recurrenceExceptions;
+  }, [recurrenceExceptions]);
+
   // --- RECURRENCE LOGIC ---
+  // NOTE: We intentionally do NOT include `transactions` or `recurrenceExceptions` as dependencies here.
+  // Using refs instead prevents the infinite loop: generate tx -> tx changes -> generate again -> ...
+  // This effect only re-runs when the month/year changes or the rules themselves change.
   useEffect(() => {
     if (recurrenceRules.length > 0 && session) {
       const generated = generateMissingRecurringTransactions(
         recurrenceRules,
-        transactions,
+        transactionsRef.current,
         dateFilter.month,
         dateFilter.year,
-        recurrenceExceptions
+        exceptionsRef.current
       );
 
       if (generated.length > 0) {
@@ -474,7 +507,8 @@ const App: React.FC = () => {
         syncGenerated();
       }
     }
-  }, [dateFilter.month, dateFilter.year, recurrenceRules, recurrenceExceptions, transactions, session]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFilter.month, dateFilter.year, recurrenceRules, session]);
 
   const filteredTransactions = useMemo(
     () => filterTransactions(transactions, dateFilter.month, dateFilter.year),
@@ -593,6 +627,13 @@ const App: React.FC = () => {
             setRecurrenceExceptions((prev) => {
               const next = [...prev, { ruleId, date: oldDate }];
               writeStorage(STORAGE_KEYS.RECURRENCE_EXCEPTIONS, next);
+              // Also persist exception to Firestore
+              const exId = `${ruleId}_${oldDate}`;
+              setDoc(doc(db, 'recurrence_exceptions', exId), {
+                ruleId,
+                date: oldDate,
+                user_id: session!.uid,
+              }).catch(() => {});
               return next;
             });
           } else {
@@ -676,6 +717,15 @@ const App: React.FC = () => {
 
   const performDeleteInstance = async (tx: Transaction) => {
     if (!tx || !tx.recurrenceRuleId || !session) return;
+
+    // Save exception to Firestore first (so it persists across cache clears)
+    const exId = `${tx.recurrenceRuleId}_${tx.date}`;
+    await setDoc(doc(db, 'recurrence_exceptions', exId), {
+      ruleId: tx.recurrenceRuleId,
+      date: tx.date,
+      user_id: session.uid,
+    });
+
     setRecurrenceExceptions((prev) => [...prev, { ruleId: tx.recurrenceRuleId!, date: tx.date }]);
     const updatedTransactions = transactions.filter((t) => t.id !== tx.id);
     setTransactions(updatedTransactions);

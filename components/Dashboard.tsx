@@ -186,21 +186,31 @@ const SectionList: React.FC<{
   const hasIncomes = incomes.length > 0;
   const hasExpenses = expenses.length > 0;
   const [collapsed, setCollapsed] = useState(true);
+  const totalCount = incomeCount + expenseCount;
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-full">
       <button
         type="button"
         onClick={() => setCollapsed((c) => !c)}
-        className="w-full px-4 py-3 sm:px-5 sm:py-4 flex flex-col sm:flex-row justify-between items-center sm:text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors gap-1 sm:gap-0"
+        className="w-full px-4 py-3 sm:px-5 sm:py-4 flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
       >
-        <span className="font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wide text-center sm:text-left">
-          {title === 'Fijos y Recurrentes' ? 'Gastos Fijos (Recurrentes)' : 'Gastos Variables'}
-        </span>
-        <div className="flex items-center gap-2 justify-center sm:justify-end">
-          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-            Total: {formatCurrency(expenseTotal)}
-          </span>
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className={`flex-shrink-0 transition-transform duration-300 ${collapsed ? '' : 'rotate-180'} text-slate-300 group-hover:text-primary-500`}>
+            <ChevronDown size={18} />
+          </div>
+          <div className="min-w-0">
+            <span className="font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wide truncate block">
+              {title === 'Fijos y Recurrentes' ? 'Gastos Fijos (Recurrentes)' : 'Gastos Variables'}
+            </span>
+            <span className="text-[10px] text-slate-400 block sm:hidden">{collapsed ? 'Tocar para ver' : 'Tocar para ocultar'} · {totalCount} movimientos</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 justify-end flex-shrink-0">
+          <span className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200">{formatCurrencyCompact(expenseTotal)}</span>
+          <div className={`hidden sm:flex items-center gap-1.5 text-xs text-slate-400 transition-all ${collapsed ? 'opacity-0 -translate-x-2' : 'opacity-100 translate-x-0'}`}>
+            <ChevronDown size={14} />
+          </div>
         </div>
       </button>
 
