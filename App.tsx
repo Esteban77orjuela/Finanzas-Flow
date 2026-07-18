@@ -961,7 +961,7 @@ const App: React.FC = () => {
         {/* Header */}
         <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
           {/* Mobile: single row */}
-          <div className="lg:hidden flex px-3 h-14 items-center justify-between gap-2">
+          <div className="lg:hidden flex flex-nowrap px-2 h-14 items-center justify-between gap-1 w-full overflow-hidden">
             <div className="flex items-center gap-2">
               <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Menú">
                 <Menu size={22} />
