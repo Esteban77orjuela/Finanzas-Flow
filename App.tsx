@@ -564,18 +564,25 @@ const App: React.FC = () => {
           }
         } else {
           if (editingTransaction.isRecurring && editingTransaction.recurrenceRuleId) {
-            setRecurrenceExceptions((prev) => [...prev, { ruleId: editingTransaction.recurrenceRuleId!, date: editingTransaction.date }]);
-
-            const updatedTx: Transaction = {
+            const ruleId = editingTransaction.recurrenceRuleId;
+            const oldDate = editingTransaction.date;
+            newTransactions = newTransactions.map((item) =>
+              item.id === editingTransaction.id
+                ? { ...t, id: editingTransaction.id, isRecurring: false, recurrenceRuleId: undefined }
+                : item
+            );
+            transactionsToSync.push({
               ...t,
               id: editingTransaction.id,
               isRecurring: false,
               recurrenceRuleId: undefined,
-            };
-            newTransactions = newTransactions.map((item) =>
-              item.id === editingTransaction.id ? updatedTx : item
-            );
-            transactionsToSync.push(updatedTx);
+            });
+            // Add exception to prevent rule from re-generating this exact date
+            setRecurrenceExceptions((prev) => {
+              const next = [...prev, { ruleId, date: oldDate }];
+              writeStorage(STORAGE_KEYS.RECURRENCE_EXCEPTIONS, next);
+              return next;
+            });
           } else {
             const updatedTx: Transaction = { ...t, id: editingTransaction.id };
             newTransactions = newTransactions.map((item) => item.id === editingTransaction.id ? updatedTx : item);
@@ -588,12 +595,7 @@ const App: React.FC = () => {
         transactionsToSync.push(newTx);
       }
 
-      setRecurrenceRules(newRules);
-      setTransactions(newTransactions);
-      setEditingTransaction(null);
-      setIsModalOpen(false);
-
-      // --- FIRESTORE SYNC ---
+      // --- FIRESTORE SYNC (FIRST) ---
       for (const rule of rulesToSync) {
         await setDoc(doc(db, 'recurrence_rules', rule.id), {
           frequency: rule.frequency,
@@ -634,6 +636,10 @@ const App: React.FC = () => {
         setAccounts((prev) => prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a)));
       }
 
+      // STATE UPDATE (AFTER Firestore succeeds)
+      setRecurrenceRules(newRules);
+      setTransactions(newTransactions);
+
       // FETCH EMOJI FROM GROQ IF CATEGORY HAS NO ICON
       const firstTx = transactionsToSync[0];
       if (firstTx) {
@@ -648,7 +654,11 @@ const App: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error al guardar:', error);
-      alert('Error al guardar: ' + (error?.message || 'Error desconocido. Revisa la consola (F12).'));
+      alert('Error al guardar en Firebase. Revisa tu conexión e intenta de nuevo.');
+      return;
+    } finally {
+      setEditingTransaction(null);
+      setIsModalOpen(false);
     }
   };
 

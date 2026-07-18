@@ -26,7 +26,31 @@ Registro de cambios, decisiones y estado del proyecto.
 - ✅ Build compila sin errores
 - ✅ TypeScript type-checks sin errores
 
-## [2026-07-10] Sprint 3 — Seguridad (Fase 7)
+## [2026-07-10] Sprint 4 — Docker (Fase 8)
+
+### Cambios realizados
+- `Dockerfile`: multi-stage build (Node 22 builder + nginx alpine production), build args para VITE_* env vars
+- `docker-compose.yml`: orquestación, pasa env vars como build args, expone puerto 3000
+- `nginx.conf`: SPA routing, caché de assets, gzip
+- `.dockerignore`: excluye node_modules, dist, .env, docs, test
+
+### Cómo usar
+```bash
+# Construir imagen
+docker compose build
+
+# Iniciar contenedor
+docker compose up -d
+# Abrir http://localhost:3000
+
+# Detener
+docker compose down
+```
+
+### Resultados
+- ✅ TypeScript: 0 errores
+- ✅ Tests: 30 pasan
+- ✅ Build: exitoso
 
 ### Cambios realizados
 - `firestore.rules`: reglas de seguridad para todas las colecciones (solo propietario puede leer/escribir)
