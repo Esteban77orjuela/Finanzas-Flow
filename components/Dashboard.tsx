@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Transaction, TransactionType, Category } from '../types';
+import { Transaction, TransactionType, Category, Goal } from '../types';
 import { calculateTotals, formatCurrency, formatCurrencyCompact } from '../utils';
 import {
   ArrowUpCircle,
@@ -11,6 +11,9 @@ import {
   Trash2,
   ArrowUpAZ,
   Calendar,
+  ChevronDown,
+  ChevronRight,
+  Trophy,
 } from 'lucide-react';
 
 type SortMode = 'ALPHA' | 'DATE';
@@ -18,8 +21,10 @@ type SortMode = 'ALPHA' | 'DATE';
 interface DashboardProps {
   transactions: Transaction[];
   categories: Category[];
+  goals: Goal[];
   onEdit: (t: Transaction) => void;
   onDelete: (id: string) => void;
+  onViewGoals: () => void;
 }
 
 interface TransactionRowProps {
@@ -180,24 +185,31 @@ const SectionList: React.FC<{
 
   const hasIncomes = incomes.length > 0;
   const hasExpenses = expenses.length > 0;
+  const [collapsed, setCollapsed] = useState(true);
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-full">
-      <div className="p-3 sm:p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {icon}
-          <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm sm:text-base truncate">
-            {title}
-          </h3>
+    <div className="bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-full">
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="w-full px-4 py-3 sm:px-5 sm:py-4 flex flex-col sm:flex-row justify-between items-center sm:text-left hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors gap-1 sm:gap-0"
+      >
+        <span className="font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wide text-center sm:text-left">
+          {title === 'Fijos y Recurrentes' ? 'Gastos Fijos (Recurrentes)' : 'Gastos Variables'}
+        </span>
+        <div className="flex items-center gap-2 justify-center sm:justify-end">
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            Total: {formatCurrency(expenseTotal)}
+          </span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className={`text-[10px] sm:text-xs font-medium px-1.5 sm:px-2 py-0.5 sm:py-1 rounded ${badgeColor} flex-shrink-0 whitespace-nowrap`}>
-            {badge}
-          </div>
-        </div>
-      </div>
+      </button>
 
-      <div className="px-3 sm:px-5 py-2.5 sm:py-4 grid grid-cols-2 gap-2 sm:gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+      <div
+        className={`transition-all duration-300 ease-in-out overflow-hidden ${
+          collapsed ? 'max-h-0 opacity-0' : 'max-h-[2000px] opacity-100 border-t border-slate-100 dark:border-slate-700'
+        }`}
+      >
+        <div className="px-3 sm:px-5 py-2.5 sm:py-4 grid grid-cols-2 gap-2 sm:gap-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800">
         <div className="min-w-0">
           <p className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider mb-0.5">
             {incomeLabel} <span className="font-mono text-slate-400">({incomeCount})</span>
@@ -296,6 +308,7 @@ const SectionList: React.FC<{
           </div>
         )}
       </div>
+      </div>
     </div>
   );
 };
@@ -303,8 +316,10 @@ const SectionList: React.FC<{
 const Dashboard: React.FC<DashboardProps> = ({
   transactions,
   categories,
+  goals,
   onEdit,
   onDelete,
+  onViewGoals,
 }) => {
   const { income, expense, balance } = useMemo(() => calculateTotals(transactions), [transactions]);
 
@@ -339,71 +354,33 @@ const Dashboard: React.FC<DashboardProps> = ({
   const variableExpenseCount = variableTransactions.filter((t) => t.type === TransactionType.EXPENSE).length;
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="bg-white dark:bg-slate-800 p-2.5 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between overflow-hidden">
-          <div className="flex items-center gap-1.5 sm:gap-3 mb-1 sm:mb-2">
-            <div className="p-1 sm:p-2 bg-blue-50 dark:bg-blue-900/30 rounded-full text-blue-600 dark:text-blue-400 flex-shrink-0">
-              <Wallet size={14} className="sm:hidden" />
-              <Wallet size={24} className="hidden sm:block" />
-            </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
-              Balance
-            </span>
-          </div>
-          <span
-            className={`text-sm sm:text-2xl md:text-3xl font-bold truncate block ${balance >= 0 ? 'text-slate-800 dark:text-white' : 'text-red-500'}`}
-            title={formatCurrency(balance)}
-          >
-            <span className="sm:hidden">{formatCurrencyCompact(balance)}</span>
-            <span className="hidden sm:inline">{formatCurrency(balance)}</span>
+    <div className="space-y-6 sm:space-y-8 animate-fade-in">
+      {/* 3 Top Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+        <div className="bg-white dark:bg-slate-800 p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-center items-center sm:items-start text-center sm:text-left">
+          <span className="text-slate-500 dark:text-slate-400 font-bold text-xs sm:text-sm uppercase tracking-wider mb-2 block">
+            Balance Total
           </span>
-          <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
-            Balance
+          <span className={`text-2xl sm:text-3xl md:text-4xl font-bold truncate block ${balance >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-500'}`} title={formatCurrency(balance)}>
+            {formatCurrency(balance)}
           </span>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-2.5 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between overflow-hidden">
-          <div className="flex items-center gap-1.5 sm:gap-3 mb-1 sm:mb-2">
-            <div className="p-1 sm:p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full text-emerald-600 dark:text-emerald-400 flex-shrink-0">
-              <ArrowUpCircle size={14} className="sm:hidden" />
-              <ArrowUpCircle size={24} className="hidden sm:block" />
-            </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
-              Ingresos
-            </span>
-          </div>
-          <span
-            className="text-sm sm:text-2xl md:text-3xl font-bold text-emerald-600 dark:text-emerald-400 truncate block"
-            title={formatCurrency(income)}
-          >
-            <span className="sm:hidden">{formatCurrencyCompact(income)}</span>
-            <span className="hidden sm:inline">{formatCurrency(income)}</span>
+        <div className="bg-white dark:bg-slate-800 p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-center items-center sm:items-start text-center sm:text-left">
+          <span className="text-slate-500 dark:text-slate-400 font-bold text-xs sm:text-sm uppercase tracking-wider mb-2 block">
+            Ingresos del Mes
           </span>
-          <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
-            Ingresos
+          <span className="text-2xl sm:text-3xl md:text-4xl font-bold text-emerald-500 dark:text-emerald-400 truncate block" title={formatCurrency(income)}>
+            +{formatCurrency(income)}
           </span>
         </div>
 
-        <div className="bg-white dark:bg-slate-800 p-2.5 sm:p-6 rounded-xl sm:rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col justify-between overflow-hidden">
-          <div className="flex items-center gap-1.5 sm:gap-3 mb-1 sm:mb-2">
-            <div className="p-1 sm:p-2 bg-rose-50 dark:bg-rose-900/30 rounded-full text-rose-600 dark:text-rose-400 flex-shrink-0">
-              <ArrowDownCircle size={14} className="sm:hidden" />
-              <ArrowDownCircle size={24} className="hidden sm:block" />
-            </div>
-            <span className="text-slate-500 dark:text-slate-400 font-medium text-[10px] sm:text-sm uppercase tracking-wide hidden sm:block">
-              Gastos
-            </span>
-          </div>
-          <span
-            className="text-sm sm:text-2xl md:text-3xl font-bold text-rose-600 dark:text-rose-400 truncate block"
-            title={formatCurrency(expense)}
-          >
-            <span className="sm:hidden">{formatCurrencyCompact(expense)}</span>
-            <span className="hidden sm:inline">{formatCurrency(expense)}</span>
+        <div className="bg-white dark:bg-slate-800 p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-center items-center sm:items-start text-center sm:text-left">
+          <span className="text-slate-500 dark:text-slate-400 font-bold text-xs sm:text-sm uppercase tracking-wider mb-2 block">
+            Gastos del Mes
           </span>
-          <span className="text-[10px] text-slate-400 uppercase tracking-wide sm:hidden mt-0.5">
-            Gastos
+          <span className="text-2xl sm:text-3xl md:text-4xl font-bold text-rose-500 dark:text-rose-400 truncate block" title={formatCurrency(expense)}>
+            -{formatCurrency(expense)}
           </span>
         </div>
       </div>
@@ -451,6 +428,69 @@ const Dashboard: React.FC<DashboardProps> = ({
           onSortChange={setVariableSort}
         />
       </div>
+
+      {/* Goals Section - Compact Widget */}
+      {goals && goals.length > 0 && (
+        <div className="bg-gradient-to-br from-violet-50 to-indigo-50 dark:from-violet-900/20 dark:to-indigo-900/20 rounded-2xl border border-violet-200/50 dark:border-violet-800/30 p-5 sm:p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <Trophy size={20} className="text-violet-600 dark:text-violet-400" />
+              <h3 className="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Metas de Ahorro</h3>
+            </div>
+            <button
+              onClick={onViewGoals}
+              className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 flex items-center gap-1 transition-colors"
+            >
+              Ver todas
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {goals.slice(0, 3).map((goal) => {
+              const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
+              const remaining = Math.max(goal.targetAmount - goal.currentAmount, 0);
+              const targetDate = new Date(goal.targetDate + '-01');
+              const targetLabel = targetDate.toLocaleString('es-MX', { month: 'short', year: 'numeric' });
+
+              return (
+                <div key={goal.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-md transition-all">
+                  <div className="h-1.5" style={{ backgroundColor: goal.color }} />
+                  <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="relative w-12 h-12 flex-shrink-0">
+                        <svg className="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
+                          <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" strokeWidth="3" className="text-slate-100 dark:text-slate-700" />
+                          <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3" strokeLinecap="round" stroke={goal.color} strokeDasharray={`${(progress / 100) * 94.2} 94.2`} className="transition-all duration-700" />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-[9px] font-bold" style={{ color: goal.color }}>{progress.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-sm text-slate-800 dark:text-white truncate">{goal.name}</h4>
+                        <p className="text-[11px] text-slate-500">{targetLabel}</p>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-600 dark:text-slate-400">
+                        <span className="font-bold text-slate-800 dark:text-white">{formatCurrencyCompact(goal.currentAmount)}</span>
+                        <span className="text-slate-400"> / {formatCurrencyCompact(goal.targetAmount)}</span>
+                      </span>
+                      {progress >= 100 ? (
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                          <Trophy size={12} /> Cumplida
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-medium">Faltan {formatCurrencyCompact(remaining)}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -33,7 +33,6 @@ import {
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
-import QuickActionPanel from './components/QuickActionPanel';
 import CategorySettings from './components/CategorySettings';
 import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
@@ -234,11 +233,13 @@ const App: React.FC = () => {
         console.warn('[FinanzaFlow] Sincronizando con Firestore...');
 
         // Parallel Fetch from Firestore
-        const [catSnap, rulesSnap, transSnap, accSnap] = await Promise.all([
+        const [catSnap, rulesSnap, transSnap, accSnap, goalsSnap, debtsSnap] = await Promise.all([
           getDocs(query(collection(db, 'categories'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'recurrence_rules'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'transactions'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'accounts'), where('user_id', '==', session.uid))),
+          getDocs(query(collection(db, 'goals'), where('user_id', '==', session.uid))),
+          getDocs(query(collection(db, 'debts'), where('user_id', '==', session.uid))),
         ]);
 
         const mappedCategories: Category[] = catSnap.docs.map(d => {
@@ -282,16 +283,30 @@ const App: React.FC = () => {
           return { id: d.id, name: data.name, type: data.type, balance: data.balance };
         });
 
+        const mappedGoals: Goal[] = goalsSnap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, name: data.name, targetAmount: data.targetAmount, currentAmount: data.currentAmount, targetDate: data.targetDate, color: data.color, icon: data.icon, createdAt: data.createdAt };
+        });
+
+        const mappedDebts: Debt[] = debtsSnap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, name: data.name, totalAmount: data.totalAmount, paidAmount: data.paidAmount, dueDate: data.dueDate, notes: data.notes, color: data.color, createdAt: data.createdAt };
+        });
+
         // --- LOCAL MIGRATION LOGIC (If Firestore is empty) ---
         const localTrans = readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
         const localCats = readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || [];
         const localRules = readStorage<RecurrenceRule[]>(STORAGE_KEYS.RULES) || [];
         const localAccs = readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS;
+        const localGoals = readStorage<Goal[]>(STORAGE_KEYS.GOALS) || [];
+        const localDebts = readStorage<Debt[]>(STORAGE_KEYS.DEBTS) || [];
 
         let finalCats = mappedCategories;
         let finalAccs = mappedAccounts;
         let finalRules = mappedRules;
         let finalTrans = mappedTransactions;
+        let finalGoals = mappedGoals;
+        let finalDebts = mappedDebts;
 
         // Migrar locales a Firestore si está vacío
         if (mappedCategories.length === 0 && localCats.length > 0) {
@@ -347,10 +362,26 @@ const App: React.FC = () => {
           finalTrans = localTrans;
         }
 
+        if (mappedGoals.length === 0 && localGoals.length > 0) {
+          for (const g of localGoals) {
+            await setDoc(doc(db, 'goals', g.id), { ...g, user_id: session.uid });
+          }
+          finalGoals = localGoals;
+        }
+
+        if (mappedDebts.length === 0 && localDebts.length > 0) {
+          for (const d of localDebts) {
+            await setDoc(doc(db, 'debts', d.id), { ...d, user_id: session.uid });
+          }
+          finalDebts = localDebts;
+        }
+
         setCategories(finalCats);
         setAccounts(finalAccs);
         setRecurrenceRules(finalRules);
         setTransactions(finalTrans);
+        setGoals(finalGoals);
+        setDebts(finalDebts);
         setRecurrenceExceptions(readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) || []);
       } catch (err: any) {
         console.error('Error inicializando Firestore:', err);
@@ -358,6 +389,8 @@ const App: React.FC = () => {
         setTransactions(readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || []);
         setCategories(readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || []);
         setAccounts(readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS);
+        setGoals(readStorage<Goal[]>(STORAGE_KEYS.GOALS) || []);
+        setDebts(readStorage<Debt[]>(STORAGE_KEYS.DEBTS) || []);
       } finally {
         setIsLoading(false);
       }
@@ -611,7 +644,7 @@ const App: React.FC = () => {
         const newBalance = roundToTwo(
           accountTransactions.reduce((acc, tx) => tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount, 0)
         );
-        await updateDoc(doc(db, 'accounts', accountId), { balance: newBalance });
+        await updateDoc(doc(db, 'accounts', accountId), { balance: newBalance, user_id: session.uid });
         setAccounts((prev) => prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a)));
       }
 
@@ -652,7 +685,7 @@ const App: React.FC = () => {
 
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
     const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
-    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance });
+    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance, user_id: session!.uid });
     setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
   };
 
@@ -672,7 +705,7 @@ const App: React.FC = () => {
 
     const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
     const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
-    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance });
+    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance, user_id: session.uid });
     setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
   };
 
@@ -697,36 +730,40 @@ const App: React.FC = () => {
 
         const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
         const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
-        await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance });
+        if (session) await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance, user_id: session.uid });
         setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
       },
     });
   };
 
   // --- GOALS HANDLERS ---
-  const handleSaveGoal = (goal: Goal) => {
+  const handleSaveGoal = async (goal: Goal) => {
     setGoals((prev) => {
       const exists = prev.find((g) => g.id === goal.id);
       if (exists) return prev.map((g) => (g.id === goal.id ? goal : g));
       return [...prev, goal];
     });
+    if (session) await setDoc(doc(db, 'goals', goal.id), { ...goal, user_id: session.uid });
   };
 
   const handleDeleteGoal = (id: string) => {
     setGoals((prev) => prev.filter((g) => g.id !== id));
+    if (session) deleteDoc(doc(db, 'goals', id));
   };
 
   // --- DEBTS HANDLERS ---
-  const handleSaveDebt = (debt: Debt) => {
+  const handleSaveDebt = async (debt: Debt) => {
     setDebts((prev) => {
       const exists = prev.find((d) => d.id === debt.id);
       if (exists) return prev.map((d) => (d.id === debt.id ? debt : d));
       return [...prev, debt];
     });
+    if (session) await setDoc(doc(db, 'debts', debt.id), { ...debt, user_id: session.uid });
   };
 
   const handleDeleteDebt = (id: string) => {
     setDebts((prev) => prev.filter((d) => d.id !== id));
+    if (session) deleteDoc(doc(db, 'debts', id));
   };
 
   // --- AI EXECUTE ---
@@ -893,113 +930,108 @@ const App: React.FC = () => {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-full w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white dark:bg-[#0f172a] border-r border-slate-200 dark:border-[#1e293b] flex flex-col transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Sidebar Header */}
-        <div className="p-5 border-b border-slate-100 dark:border-slate-800">
+        <div className="p-5 border-b border-slate-100 dark:border-[#1e293b]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center text-white font-bold text-base shadow-lg">F</div>
+              <div className="w-9 h-9 bg-emerald-500 rounded-xl flex items-center justify-center text-white font-bold text-base shadow-lg">FF</div>
               <div>
-                <span className="font-bold text-base tracking-tight block">FinanzaFlow</span>
-                <span className="text-[10px] text-slate-400 font-medium">Control financiero</span>
+                <span className="font-bold text-lg tracking-tight block text-slate-800 dark:text-white">FinanzaFlow</span>
               </div>
             </div>
-            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 lg:hidden"><X size={18} /></button>
+            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 lg:hidden"><X size={18} /></button>
           </div>
         </div>
 
         {/* Sidebar Nav */}
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
           {[
-            { id: 'DASHBOARD' as ViewState, label: 'Inicio', icon: LayoutDashboard, color: 'text-primary-600' },
-            { id: 'GOALS' as ViewState, label: 'Metas', icon: Trophy, color: 'text-amber-500' },
-            { id: 'DEBTS' as ViewState, label: 'Deudas', icon: TrendingDown, color: 'text-rose-500' },
-            { id: 'TRANSACTIONS' as ViewState, label: 'Historial', icon: List, color: 'text-indigo-500' },
-            { id: 'PLANNING' as ViewState, label: 'Planificación', icon: FileText, color: 'text-violet-500' },
-            { id: 'SETTINGS' as ViewState, label: 'Ajustes', icon: Settings, color: 'text-slate-500' },
+            { id: 'DASHBOARD' as ViewState, label: 'Inicio', icon: LayoutDashboard },
+            { id: 'TRANSACTIONS' as ViewState, label: 'Movimientos', icon: List },
+            { id: 'ASISTENTE' as ViewState, label: 'Asistente', icon: Sparkles },
+            { id: 'GOALS' as ViewState, label: 'Metas', icon: Trophy },
+            { id: 'DEBTS' as ViewState, label: 'Deudas', icon: TrendingDown },
+            { id: 'PLANNING' as ViewState, label: 'Planificación', icon: FileText },
+            { id: 'SETTINGS' as ViewState, label: 'Perfil', icon: Settings },
           ].map((item) => (
             <button
-              key={item.id}
-              onClick={() => { setView(item.id); setSidebarOpen(false); }}
+              key={item.label}
+              onClick={() => { 
+                if (item.label === 'Asistente') setIsAIModalOpen(true); 
+                else setView(item.id); 
+                setSidebarOpen(false); 
+              }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                view === item.id
-                  ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                (view === item.id && item.label !== 'Asistente')
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <item.icon size={20} className={view === item.id ? 'text-primary-600' : item.color} />
+              <item.icon size={20} className={(view === item.id && item.label !== 'Asistente') ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'} />
               <span>{item.label}</span>
             </button>
           ))}
         </nav>
 
-        {/* Sidebar AI Button */}
-        <div className="px-3 pb-2">
-          <button
-            onClick={() => { setIsAIModalOpen(true); setSidebarOpen(false); }}
-            className="w-full py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-110 transition-all"
-          >
-            <Sparkles size={14} className="text-yellow-300" />
-            Asistente IA
-          </button>
-        </div>
-
         {/* Sidebar Footer */}
-        <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+        <div className="p-4 border-t border-slate-100 dark:border-[#1e293b] space-y-2">
           <div className="flex items-center gap-2">
-            <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+            <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" aria-label="Modo oscuro">
               {darkMode ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            <span className="text-xs text-slate-400 truncate flex-1">{session?.email?.split('@')[0] || 'Usuario'}</span>
-            <button onClick={handleLogout} className="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all" title="Cerrar sesión"><LogOut size={16} /></button>
+            <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">{session?.email?.split('@')[0] || 'Usuario'}</span>
+            <button onClick={handleLogout} className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" title="Cerrar sesión"><LogOut size={16} /></button>
           </div>
         </div>
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-h-screen min-w-0">
-        {/* Header */}
-        <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-          {/* Mobile: single row */}
-          <div className="lg:hidden flex flex-nowrap px-2 h-14 items-center justify-between gap-1 w-full overflow-hidden">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Menú">
-                <Menu size={22} />
-              </button>
-              
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg shadow-sm">
-                <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-700 rounded-l-md transition-colors"><ChevronLeft size={16} /></button>
-                <span className="px-1 text-xs font-bold w-[76px] text-center select-none capitalize tracking-tight truncate">{shortMonth}</span>
-                <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-700 rounded-r-md transition-colors"><ChevronRight size={16} /></button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button onClick={() => setDarkMode(!darkMode)} className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg transition-colors" aria-label="Modo oscuro">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
-              <button onClick={handleLogout} className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors" aria-label="Cerrar sesión"><LogOut size={20} /></button>
-            </div>
-          </div>
-          {/* Desktop: single row */}
-          <div className="hidden lg:flex px-5 h-14 items-center justify-between">
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg">
-              <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-l-md"><ChevronLeft size={16} /></button>
-              <span className="px-3 text-sm font-medium capitalize w-32 text-center select-none">{monthName}</span>
-              <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-r-md"><ChevronRight size={16} /></button>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setIsAIModalOpen(true)} className="px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-bold rounded-full shadow-lg items-center gap-1 hover:brightness-110 transition-all flex"><Sparkles size={12} className="text-yellow-300" />Asistente IA</button>
-              {session?.email && <span className="text-xs text-slate-500 font-medium truncate max-w-[100px]">{session.email.split('@')[0]}</span>}
-              <button onClick={() => setDarkMode(!darkMode)} className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg" aria-label="Modo oscuro">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-            </div>
-          </div>
-        </header>
+      <div className="flex-1 flex flex-col min-h-screen min-w-0 bg-slate-50 dark:bg-slate-950">
+        
+        {/* Mobile Header (Only for hamburger menu) */}
+        <div className="lg:hidden flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Menú">
+            <Menu size={22} />
+          </button>
+          <span className="font-bold text-sm text-slate-800 dark:text-white">FinanzaFlow</span>
+          <div className="w-8"></div> {/* Spacer for centering */}
+        </div>
 
         {/* Main Content Area */}
-        <main className="flex-1 px-3 sm:px-5 pt-4 sm:pt-6 pb-28 max-w-5xl w-full mx-auto">
+        <main className="flex-1 px-4 sm:px-8 pt-6 sm:pt-8 pb-28 max-w-6xl w-full mx-auto">
+          
+          {/* Global View Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+            <div className="text-center sm:text-left">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 dark:text-white">
+                {view === 'DASHBOARD' ? 'Resumen' : 
+                 view === 'TRANSACTIONS' ? 'Movimientos' : 
+                 view === 'GOALS' ? 'Metas de Ahorro' : 
+                 view === 'DEBTS' ? 'Deudas' : 
+                 view === 'PLANNING' ? 'Planificación' : 'Ajustes'}
+              </h1>
+              <p className="text-sm text-slate-500 mt-1">
+                {view === 'DASHBOARD' ? 'Tu panorama financiero' : 'Gestiona tus finanzas paso a paso'}
+              </p>
+            </div>
+            
+            {/* Month Selector Pill */}
+            <div className="flex items-center justify-center sm:justify-end gap-3">
+              <div className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full shadow-sm p-1">
+                <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-500"><ChevronLeft size={16} /></button>
+                <span className="px-4 text-sm font-medium capitalize w-32 text-center select-none text-slate-700 dark:text-slate-300">{monthName}</span>
+                <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-500"><ChevronRight size={16} /></button>
+              </div>
+              <button onClick={() => setDarkMode(!darkMode)} className="hidden sm:flex p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Modo oscuro">
+                {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+            </div>
+          </div>
+
           {view === 'DASHBOARD' && (
             <>
-              <QuickActionPanel onAddExpense={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.EXPENSE); setIsModalOpen(true); }} onAddIncome={() => { setEditingTransaction(null); setDefaultFormType(TransactionType.INCOME); setIsModalOpen(true); }} onOpenAI={() => setIsAIModalOpen(true)} onAddCategory={() => setIsCategoryModalOpen(true)} />
-              <Dashboard transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
+              <Dashboard transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} goals={goals} onViewGoals={() => setView('GOALS')} />
             </>
           )}
 
