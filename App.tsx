@@ -836,6 +836,7 @@ const App: React.FC = () => {
   };
 
   const monthName = new Date(dateFilter.year, dateFilter.month).toLocaleString('es-MX', { month: 'long', year: 'numeric' });
+  const shortMonth = new Date(dateFilter.year, dateFilter.month).toLocaleString('es-MX', { month: 'short', year: 'numeric' }).replace('.', '');
 
   if (authLoading) {
     return (
@@ -959,24 +960,23 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
         {/* Header */}
         <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-          {/* Mobile: two rows */}
-          <div className="lg:hidden">
-            <div className="px-2 h-11 flex items-center justify-between">
-              <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Menú">
-                <Menu size={18} />
+          {/* Mobile: single row */}
+          <div className="lg:hidden flex px-3 h-14 items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Menú">
+                <Menu size={22} />
               </button>
-              <span className="font-bold text-base tracking-tight">FF</span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setDarkMode(!darkMode)} className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg" aria-label="Modo oscuro">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-                <button onClick={handleLogout} className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg" aria-label="Cerrar sesión"><LogOut size={18} /></button>
+              
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg shadow-sm">
+                <button onClick={() => changeMonth(-1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-700 rounded-l-md transition-colors"><ChevronLeft size={16} /></button>
+                <span className="px-1 text-xs font-bold w-[76px] text-center select-none capitalize tracking-tight truncate">{shortMonth}</span>
+                <button onClick={() => changeMonth(1)} className="p-1.5 hover:bg-white dark:hover:bg-slate-700 rounded-r-md transition-colors"><ChevronRight size={16} /></button>
               </div>
             </div>
-            <div className="px-2 pb-1.5 flex justify-center">
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg">
-                <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-l-md"><ChevronLeft size={14} /></button>
-                <span className="px-2 text-xs font-medium capitalize w-[120px] text-center select-none">{monthName}</span>
-                <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-r-md"><ChevronRight size={14} /></button>
-              </div>
+
+            <div className="flex items-center gap-1">
+              <button onClick={() => setDarkMode(!darkMode)} className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg transition-colors" aria-label="Modo oscuro">{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+              <button onClick={handleLogout} className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors" aria-label="Cerrar sesión"><LogOut size={20} /></button>
             </div>
           </div>
           {/* Desktop: single row */}
