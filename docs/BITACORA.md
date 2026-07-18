@@ -26,6 +26,15 @@ Registro de cambios, decisiones y estado del proyecto.
 - ✅ Build compila sin errores
 - ✅ TypeScript type-checks sin errores
 
+## [2026-07-10] Bugfix: Persistencia Firestore + Header responsive
+
+### Cambios realizados
+- `App.tsx` — handleSaveTransaction: estado local se actualiza **después** de Firestore (no antes). Si Firestore falla, el estado NO cambia.
+- `App.tsx` — Editar instancia única: ahora se desvincula de la regla (`isRecurring: false`, `recurrenceRuleId: null`) y agrega excepción para evitar regeneración.
+- `App.tsx` — Header responsive rediseñado: "FF" en vez de "FinanzaFlow", mes selector más compacto, sin logout en mobile (solo sidebar). Sin overflow.
+- `App.tsx` — getInitialDateFilter: siempre usa el mes actual (ya no carga filtro guardado de localStorage).
+- `App.tsx` — Eliminado `sanitizeDateFilter` (no usado) y persistencia de `DATE_FILTER`.
+
 ## [2026-07-10] Sprint 4 — Docker (Fase 8)
 
 ### Cambios realizados

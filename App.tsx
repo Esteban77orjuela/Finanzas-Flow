@@ -112,29 +112,12 @@ const writeStorage = (key: string, value: unknown) => {
   }
 };
 
-const sanitizeDateFilter = (value: unknown, fallback: DateFilter): DateFilter => {
-  if (!value || typeof value !== 'object') return fallback;
-  const candidate = value as Partial<DateFilter>;
-
-  const month =
-    typeof candidate.month === 'number' && candidate.month >= 0 && candidate.month <= 11
-      ? candidate.month
-      : fallback.month;
-  const year =
-    typeof candidate.year === 'number' && candidate.year > 1900 ? candidate.year : fallback.year;
-
-  return { month, year };
-};
-
 const getInitialDateFilter = (): DateFilter => {
   const now = new Date();
-  const fallback: DateFilter = {
+  return {
     month: now.getMonth(),
     year: now.getFullYear(),
   };
-
-  const stored = readStorage<DateFilter>(STORAGE_KEYS.DATE_FILTER);
-  return sanitizeDateFilter(stored, fallback);
 };
 
 const getInitialView = (): ViewState => {
@@ -407,10 +390,6 @@ const App: React.FC = () => {
   useEffect(() => {
     writeStorage(STORAGE_KEYS.VIEW, view);
   }, [view]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.DATE_FILTER, dateFilter);
-  }, [dateFilter]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.GOALS, goals);
@@ -980,24 +959,37 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
         {/* Header */}
         <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-          <div className="px-3 sm:px-5 h-12 sm:h-14 flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden">
-                <Menu size={20} />
+          {/* Mobile: two rows */}
+          <div className="lg:hidden">
+            <div className="px-2 h-11 flex items-center justify-between">
+              <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Menú">
+                <Menu size={18} />
               </button>
-              <span className="font-bold text-lg tracking-tight lg:hidden">FinanzaFlow</span>
-              {/* Month Selector */}
-              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 sm:p-1 ml-1 sm:ml-3">
-                <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronLeft size={16} /></button>
-                <span className="px-2 sm:px-3 text-xs sm:text-sm font-medium capitalize w-28 sm:w-32 text-center select-none">{monthName}</span>
-                <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md"><ChevronRight size={16} /></button>
+              <span className="font-bold text-base tracking-tight">FF</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setDarkMode(!darkMode)} className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg" aria-label="Modo oscuro">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
+                <button onClick={handleLogout} className="p-1.5 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg" aria-label="Cerrar sesión"><LogOut size={18} /></button>
               </div>
             </div>
-            <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-              <button onClick={() => setIsAIModalOpen(true)} className="hidden lg:flex px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-[10px] sm:text-xs font-bold rounded-full shadow-lg items-center gap-1 hover:brightness-110 transition-all"><Sparkles size={12} className="text-yellow-300" />Asistente IA</button>
-              {session?.email && <span className="hidden lg:block text-[10px] sm:text-xs text-slate-500 font-medium truncate max-w-[100px]">{session.email.split('@')[0]}</span>}
-              <button onClick={() => setDarkMode(!darkMode)} className="p-1.5 sm:p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-              <button onClick={handleLogout} className="p-1.5 sm:p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg lg:hidden"><LogOut size={18} /></button>
+            <div className="px-2 pb-1.5 flex justify-center">
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg">
+                <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-l-md"><ChevronLeft size={14} /></button>
+                <span className="px-2 text-xs font-medium capitalize w-[120px] text-center select-none">{monthName}</span>
+                <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-r-md"><ChevronRight size={14} /></button>
+              </div>
+            </div>
+          </div>
+          {/* Desktop: single row */}
+          <div className="hidden lg:flex px-5 h-14 items-center justify-between">
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg">
+              <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-l-md"><ChevronLeft size={16} /></button>
+              <span className="px-3 text-sm font-medium capitalize w-32 text-center select-none">{monthName}</span>
+              <button onClick={() => changeMonth(1)} className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-r-md"><ChevronRight size={16} /></button>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setIsAIModalOpen(true)} className="px-3 py-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-bold rounded-full shadow-lg items-center gap-1 hover:brightness-110 transition-all flex"><Sparkles size={12} className="text-yellow-300" />Asistente IA</button>
+              {session?.email && <span className="text-xs text-slate-500 font-medium truncate max-w-[100px]">{session.email.split('@')[0]}</span>}
+              <button onClick={() => setDarkMode(!darkMode)} className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg" aria-label="Modo oscuro">{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
             </div>
           </div>
         </header>
