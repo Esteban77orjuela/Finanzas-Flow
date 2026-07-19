@@ -142,7 +142,7 @@ const CategorySettings: React.FC<CategorySettingsProps> = ({
                     {cat.name}
                   </span>
                   <span className="text-[10px] uppercase tracking-widest font-bold text-slate-400">
-                    {activeTab === TransactionType.EXPENSE ? 'Debito' : 'Credito'}
+                    {activeTab === TransactionType.EXPENSE ? 'Gasto' : 'Ingreso'}
                   </span>
                 </div>
               )}

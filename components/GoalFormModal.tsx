@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Goal } from '../types';
 import { generateId } from '../utils';
 import { X, Check, Target } from 'lucide-react';
@@ -18,6 +18,16 @@ const GoalFormModal: React.FC<GoalFormModalProps> = ({ isOpen, onClose, onSave, 
   const [currentAmount, setCurrentAmount] = useState(initialData?.currentAmount?.toString() || '');
   const [targetDate, setTargetDate] = useState(initialData?.targetDate || '');
   const [color, setColor] = useState(initialData?.color || GOAL_COLORS[5]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName(initialData?.name || '');
+      setTargetAmount(initialData?.targetAmount?.toString() || '');
+      setCurrentAmount(initialData?.currentAmount?.toString() || '');
+      setTargetDate(initialData?.targetDate || '');
+      setColor(initialData?.color || GOAL_COLORS[5]);
+    }
+  }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 

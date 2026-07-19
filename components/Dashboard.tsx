@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Transaction, TransactionType, Category, Goal } from '../types';
+import { Transaction, TransactionType, Category, Goal, Account } from '../types';
 import { calculateTotals, formatCurrency, formatCurrencyCompact } from '../utils';
 import {
   ArrowUpCircle,
@@ -22,6 +22,7 @@ interface DashboardProps {
   transactions: Transaction[];
   categories: Category[];
   goals: Goal[];
+  accounts: Account[];
   onEdit: (t: Transaction) => void;
   onDelete: (id: string) => void;
   onViewGoals: () => void;
@@ -201,7 +202,7 @@ const SectionList: React.FC<{
           </div>
           <div className="min-w-0">
             <span className="font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-300 uppercase tracking-wide truncate block">
-              {title === 'Fijos y Recurrentes' ? 'Gastos Fijos (Recurrentes)' : 'Gastos Variables'}
+              {title === 'Fijos y Recurrentes' ? 'Ingresos y Gastos Fijos' : 'Ingresos y Gastos Variables'}
             </span>
             <span className="text-[10px] text-slate-400 block sm:hidden">{collapsed ? 'Tocar para ver' : 'Tocar para ocultar'} · {totalCount} movimientos</span>
           </div>
@@ -327,11 +328,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   transactions,
   categories,
   goals,
+  accounts,
   onEdit,
   onDelete,
   onViewGoals,
 }) => {
-  const { income, expense, balance } = useMemo(() => calculateTotals(transactions), [transactions]);
+  const { income, expense } = useMemo(() => calculateTotals(transactions), [transactions]);
+  const realBalance = useMemo(() => accounts.reduce((sum, acc) => sum + acc.balance, 0), [accounts]);
 
   const [fixedSort, setFixedSort] = useState<SortMode>('ALPHA');
   const [variableSort, setVariableSort] = useState<SortMode>('ALPHA');
@@ -371,8 +374,8 @@ const Dashboard: React.FC<DashboardProps> = ({
           <span className="text-slate-500 dark:text-slate-400 font-bold text-xs sm:text-sm uppercase tracking-wider mb-2 block">
             Balance Total
           </span>
-          <span className={`text-2xl sm:text-3xl md:text-4xl font-bold truncate block ${balance >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-500'}`} title={formatCurrency(balance)}>
-            {formatCurrency(balance)}
+          <span className={`text-2xl sm:text-3xl md:text-4xl font-bold truncate block ${realBalance >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-500'}`} title={formatCurrency(realBalance)}>
+            {formatCurrency(realBalance)}
           </span>
         </div>
 

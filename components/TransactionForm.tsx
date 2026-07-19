@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Transaction, TransactionType, Category, Account } from '../types';
+import { Transaction, TransactionType, Category, Account, Goal, Debt } from '../types';
 import { generateId } from '../utils';
 import { X, Check, Repeat, CalendarClock, AlertCircle, Plus, Tag } from 'lucide-react';
 
@@ -19,6 +19,8 @@ interface TransactionFormProps {
   accounts: Account[];
   initialData?: Transaction | null;
   defaultType?: TransactionType;
+  goals?: Goal[];
+  debts?: Debt[];
 }
 
 const TransactionForm: React.FC<TransactionFormProps> = ({
@@ -30,6 +32,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   accounts,
   initialData,
   defaultType = TransactionType.EXPENSE,
+  goals = [],
+  debts = [],
 }) => {
   // Initialize state directly from props at mount time
   const [amount, setAmount] = useState(initialData?.amount?.toString() || '');
@@ -52,6 +56,29 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
   // Quick Category Add State
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Linking State
+  const [linkedGoalId, setLinkedGoalId] = useState(initialData?.linkedGoalId || '');
+  const [linkedDebtId, setLinkedDebtId] = useState(initialData?.linkedDebtId || '');
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setAmount(initialData?.amount?.toString() || '');
+      setType(initialData?.type || defaultType);
+      
+      const cats = categories.filter((c) => c.type === (initialData?.type || defaultType));
+      setCategoryId(initialData?.categoryId || cats[0]?.id || '');
+      setAccountId(initialData?.accountId || accounts[0]?.id || '');
+      setDate(initialData?.date || new Date().toISOString().split('T')[0]);
+      setNote(initialData?.note || '');
+      setIsRecurring(initialData?.isRecurring || false);
+      setUpdateFuture(false);
+      setIsCreatingCategory(false);
+      setNewCategoryName('');
+      setLinkedGoalId(initialData?.linkedGoalId || '');
+      setLinkedDebtId(initialData?.linkedDebtId || '');
+    }
+  }, [isOpen, initialData, defaultType, categories, accounts]);
 
   const handleTypeChange = (newType: TransactionType) => {
     setType(newType);
@@ -109,6 +136,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
       note,
       isRecurring,
       recurrenceRuleId: initialData?.recurrenceRuleId, // Keep link if simple edit, logic in parent handles breaking it
+      linkedGoalId: linkedGoalId || undefined,
+      linkedDebtId: linkedDebtId || undefined,
     };
 
     onSave(transaction, {
@@ -322,6 +351,42 @@ const TransactionForm: React.FC<TransactionFormProps> = ({
               lang="es"
             />
           </div>
+
+          {/* Linking Section (Optional) */}
+          {(goals.length > 0 || debts.length > 0) && (
+            <div className="grid grid-cols-2 gap-4">
+              {goals.length > 0 && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wider">
+                    Vincular a Meta
+                  </label>
+                  <select
+                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                    value={linkedGoalId}
+                    onChange={(e) => { setLinkedGoalId(e.target.value); setLinkedDebtId(''); }}
+                  >
+                    <option value="">Ninguna</option>
+                    {goals.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {debts.length > 0 && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wider">
+                    Vincular a Deuda
+                  </label>
+                  <select
+                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                    value={linkedDebtId}
+                    onChange={(e) => { setLinkedDebtId(e.target.value); setLinkedGoalId(''); }}
+                  >
+                    <option value="">Ninguna</option>
+                    {debts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Recurring Toggle */}
           {(!initialData || !initialData.isRecurring) && (

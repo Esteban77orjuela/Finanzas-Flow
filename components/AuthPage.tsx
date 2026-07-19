@@ -147,7 +147,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onFinishRecovery, initialMode }) =>
             <span className="text-white text-2xl font-bold">F</span>
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">FinanzaFlow</h1>
-          <p className="text-slate-400 mt-2">Tu control financiero personal (Power by Firebase)</p>
+          <p className="text-slate-400 mt-2">Tu control financiero personal (Powered by Firebase)</p>
         </div>
 
         {/* Card */}

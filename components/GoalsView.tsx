@@ -1,20 +1,32 @@
 import React, { useState } from 'react';
-import { Goal } from '../types';
+import { Goal, Transaction } from '../types';
 import { formatCurrency, formatCurrencyCompact } from '../utils';
 import { Target, Plus, Edit2, Trash2, ChevronRight, PiggyBank, TrendingUp, Calendar, Trophy } from 'lucide-react';
 
 interface GoalsViewProps {
   goals: Goal[];
+  transactions: Transaction[];
   onAdd: () => void;
   onEdit: (goal: Goal) => void;
   onDelete: (id: string) => void;
 }
 
-const GoalsView: React.FC<GoalsViewProps> = ({ goals, onAdd, onEdit, onDelete }) => {
+const GoalsView: React.FC<GoalsViewProps> = ({ goals, transactions, onAdd, onEdit, onDelete }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const totalSaved = goals.reduce((s, g) => s + g.currentAmount, 0);
-  const totalTarget = goals.reduce((s, g) => s + g.targetAmount, 0);
+  // Compute total dynamic amounts for all goals
+  const goalsWithCalculatedAmounts = goals.map(goal => {
+    const linkedTxSum = transactions
+      .filter(t => t.linkedGoalId === goal.id)
+      .reduce((sum, t) => sum + t.amount, 0);
+    return {
+      ...goal,
+      calculatedCurrentAmount: goal.currentAmount + linkedTxSum
+    };
+  });
+
+  const totalSaved = goalsWithCalculatedAmounts.reduce((s, g) => s + g.calculatedCurrentAmount, 0);
+  const totalTarget = goalsWithCalculatedAmounts.reduce((s, g) => s + g.targetAmount, 0);
   const overallProgress = totalTarget > 0 ? Math.min((totalSaved / totalTarget) * 100, 100) : 0;
 
   return (
@@ -77,9 +89,9 @@ const GoalsView: React.FC<GoalsViewProps> = ({ goals, onAdd, onEdit, onDelete })
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {goals.map((goal) => {
-            const progress = goal.targetAmount > 0 ? Math.min((goal.currentAmount / goal.targetAmount) * 100, 100) : 0;
-            const remaining = Math.max(goal.targetAmount - goal.currentAmount, 0);
+          {goalsWithCalculatedAmounts.map((goal) => {
+            const progress = goal.targetAmount > 0 ? Math.min((goal.calculatedCurrentAmount / goal.targetAmount) * 100, 100) : 0;
+            const remaining = Math.max(goal.targetAmount - goal.calculatedCurrentAmount, 0);
             const targetDate = new Date(goal.targetDate + '-01');
             const targetLabel = targetDate.toLocaleString('es-MX', { month: 'long', year: 'numeric' });
 
@@ -167,7 +179,7 @@ const GoalsView: React.FC<GoalsViewProps> = ({ goals, onAdd, onEdit, onDelete })
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-600 dark:text-slate-400">Ahorrado</span>
-                        <span className="font-bold text-slate-800 dark:text-white">{formatCurrencyCompact(goal.currentAmount)}</span>
+                        <span className="font-bold text-slate-800 dark:text-white">{formatCurrencyCompact(goal.calculatedCurrentAmount)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-600 dark:text-slate-400">Meta</span>

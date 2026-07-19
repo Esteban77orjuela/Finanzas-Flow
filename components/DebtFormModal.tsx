@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Debt } from '../types';
 import { generateId } from '../utils';
 import { X, Check, CreditCard } from 'lucide-react';
@@ -19,6 +19,17 @@ const DebtFormModal: React.FC<DebtFormModalProps> = ({ isOpen, onClose, onSave, 
   const [dueDate, setDueDate] = useState(initialData?.dueDate || '');
   const [notes, setNotes] = useState(initialData?.notes || '');
   const [color, setColor] = useState(initialData?.color || DEBT_COLORS[0]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setName(initialData?.name || '');
+      setTotalAmount(initialData?.totalAmount?.toString() || '');
+      setPaidAmount(initialData?.paidAmount?.toString() || '');
+      setDueDate(initialData?.dueDate || '');
+      setNotes(initialData?.notes || '');
+      setColor(initialData?.color || DEBT_COLORS[0]);
+    }
+  }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 

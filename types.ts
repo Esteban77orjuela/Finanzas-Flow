@@ -44,6 +44,8 @@ export interface Transaction {
   note?: string;
   isRecurring: boolean;
   recurrenceRuleId?: string; // Links this specific transaction to a rule
+  linkedGoalId?: string; // Links this transaction to a Goal
+  linkedDebtId?: string; // Links this transaction to a Debt
 }
 
 export type ViewState = 'DASHBOARD' | 'TRANSACTIONS' | 'PLANNING' | 'SETTINGS' | 'GOALS' | 'DEBTS';

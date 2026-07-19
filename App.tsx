@@ -276,6 +276,8 @@ const App: React.FC = () => {
             note: data.note,
             isRecurring: data.is_recurring,
             recurrenceRuleId: data.recurrence_rule_id,
+            linkedGoalId: data.linked_goal_id,
+            linkedDebtId: data.linked_debt_id,
           };
         });
 
@@ -674,6 +676,8 @@ const App: React.FC = () => {
           note: tx.note,
           is_recurring: tx.isRecurring,
           recurrence_rule_id: tx.recurrenceRuleId || null,
+          linked_goal_id: tx.linkedGoalId || null,
+          linked_debt_id: tx.linkedDebtId || null,
           user_id: session.uid
         });
       }
@@ -1081,7 +1085,7 @@ const App: React.FC = () => {
 
           {view === 'DASHBOARD' && (
             <>
-              <Dashboard transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} goals={goals} onViewGoals={() => setView('GOALS')} />
+              <Dashboard transactions={filteredTransactions} categories={categories} accounts={accounts} onEdit={handleEditClick} onDelete={handleDeleteTransaction} goals={goals} onViewGoals={() => setView('GOALS')} />
             </>
           )}
 
@@ -1098,6 +1102,7 @@ const App: React.FC = () => {
           {view === 'GOALS' && (
             <GoalsView
               goals={goals}
+              transactions={transactions}
               onAdd={() => { setEditingGoal(null); setIsGoalModalOpen(true); }}
               onEdit={(g) => { setEditingGoal(g); setIsGoalModalOpen(true); }}
               onDelete={handleDeleteGoal}
@@ -1107,6 +1112,7 @@ const App: React.FC = () => {
           {view === 'DEBTS' && (
             <DebtsView
               debts={debts}
+              transactions={transactions}
               onAdd={() => { setEditingDebt(null); setIsDebtModalOpen(true); }}
               onEdit={(d) => { setEditingDebt(d); setIsDebtModalOpen(true); }}
               onDelete={handleDeleteDebt}
@@ -1191,7 +1197,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Modals */}
-      <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={accounts} initialData={editingTransaction} defaultType={defaultFormType} />
+      <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={accounts} goals={goals} debts={debts} initialData={editingTransaction} defaultType={defaultFormType} />
       <FloatingCalculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
       <ConfirmationModal isOpen={confirmDialog.isOpen} onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))} onConfirm={confirmDialog.onConfirm} title={confirmDialog.title} message={confirmDialog.message} isDestructive={confirmDialog.isDestructive} />
       <AIAssistantModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} categories={categories} accounts={accounts} onExecuteContext={handleAIExecute} />

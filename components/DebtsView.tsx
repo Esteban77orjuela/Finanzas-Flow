@@ -1,20 +1,32 @@
 import React, { useState } from 'react';
-import { Debt } from '../types';
+import { Debt, Transaction } from '../types';
 import { formatCurrency, formatCurrencyCompact } from '../utils';
 import { CreditCard, Plus, Edit2, Trash2, AlertTriangle, Calendar, TrendingDown, ShieldCheck } from 'lucide-react';
 
 interface DebtsViewProps {
   debts: Debt[];
+  transactions: Transaction[];
   onAdd: () => void;
   onEdit: (debt: Debt) => void;
   onDelete: (id: string) => void;
 }
 
-const DebtsView: React.FC<DebtsViewProps> = ({ debts, onAdd, onEdit, onDelete }) => {
+const DebtsView: React.FC<DebtsViewProps> = ({ debts, transactions, onAdd, onEdit, onDelete }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const totalDebt = debts.reduce((s, d) => s + d.totalAmount, 0);
-  const totalPaid = debts.reduce((s, d) => s + d.paidAmount, 0);
+  // Compute total dynamic amounts for all debts
+  const debtsWithCalculatedAmounts = debts.map(debt => {
+    const linkedTxSum = transactions
+      .filter(t => t.linkedDebtId === debt.id)
+      .reduce((sum, t) => sum + t.amount, 0);
+    return {
+      ...debt,
+      calculatedPaidAmount: debt.paidAmount + linkedTxSum
+    };
+  });
+
+  const totalDebt = debtsWithCalculatedAmounts.reduce((s, d) => s + d.totalAmount, 0);
+  const totalPaid = debtsWithCalculatedAmounts.reduce((s, d) => s + d.calculatedPaidAmount, 0);
   const totalRemaining = totalDebt - totalPaid;
   const overallProgress = totalDebt > 0 ? Math.min((totalPaid / totalDebt) * 100, 100) : 0;
 
@@ -78,11 +90,11 @@ const DebtsView: React.FC<DebtsViewProps> = ({ debts, onAdd, onEdit, onDelete })
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {debts.map((debt) => {
-            const progress = debt.totalAmount > 0 ? Math.min((debt.paidAmount / debt.totalAmount) * 100, 100) : 0;
-            const remaining = Math.max(debt.totalAmount - debt.paidAmount, 0);
+          {debtsWithCalculatedAmounts.map((debt) => {
+            const progress = debt.totalAmount > 0 ? Math.min((debt.calculatedPaidAmount / debt.totalAmount) * 100, 100) : 0;
+            const remaining = Math.max(debt.totalAmount - debt.calculatedPaidAmount, 0);
             const isPaid = progress >= 100;
-            const isOverdue = debt.dueDate && new Date(debt.dueDate) < new Date() && !isPaid;
+            const isOverdue = debt.dueDate && new Date(debt.dueDate + 'T23:59:59') < new Date() && !isPaid;
 
             return (
               <div
@@ -140,7 +152,7 @@ const DebtsView: React.FC<DebtsViewProps> = ({ debts, onAdd, onEdit, onDelete })
                   <div>
                     <div className="flex justify-between text-xs text-slate-500 mb-1.5">
                       <span>{isPaid ? 'Pagada' : `${progress.toFixed(0)}% pagado`}</span>
-                      <span className="font-mono">{formatCurrencyCompact(debt.paidAmount)} / {formatCurrencyCompact(debt.totalAmount)}</span>
+                      <span className="font-mono">{formatCurrencyCompact(debt.calculatedPaidAmount)} / {formatCurrencyCompact(debt.totalAmount)}</span>
                     </div>
                     <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5">
                       <div
