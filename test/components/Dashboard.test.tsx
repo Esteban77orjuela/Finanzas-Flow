@@ -15,20 +15,20 @@ const mockTransactions: Transaction[] = [
 
 describe('Dashboard', () => {
   it('renders category names from transaction rows', () => {
-    render(<Dashboard transactions={mockTransactions} categories={mockCategories} goals={[]} onViewGoals={() => {}} onEdit={() => {}} onDelete={() => {}} />);
+    render(<Dashboard transactions={mockTransactions} categories={mockCategories} goals={[]} accounts={[]} onViewGoals={() => {}} onEdit={() => {}} onDelete={() => {}} />);
     expect(screen.getByText('Comida')).toBeTruthy();
     expect(screen.getByText('Salario')).toBeTruthy();
   });
 
   it('shows summary cards: Balance, Ingresos, Gastos', () => {
-    render(<Dashboard transactions={mockTransactions} categories={mockCategories} goals={[]} onViewGoals={() => {}} onEdit={() => {}} onDelete={() => {}} />);
+    render(<Dashboard transactions={mockTransactions} categories={mockCategories} goals={[]} accounts={[]} onViewGoals={() => {}} onEdit={() => {}} onDelete={() => {}} />);
     expect(screen.getAllByText(/Balance/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Ingresos/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Gastos/).length).toBeGreaterThan(0);
   });
 
   it('shows empty state for sections when no transactions', () => {
-    render(<Dashboard transactions={[]} categories={mockCategories} goals={[]} onViewGoals={() => {}} onEdit={() => {}} onDelete={() => {}} />);
+    render(<Dashboard transactions={[]} categories={mockCategories} goals={[]} accounts={[]} onViewGoals={() => {}} onEdit={() => {}} onDelete={() => {}} />);
     expect(screen.getByText('Sin movimientos recurrentes')).toBeTruthy();
     expect(screen.getByText('Sin movimientos variables')).toBeTruthy();
   });

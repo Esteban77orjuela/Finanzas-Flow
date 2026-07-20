@@ -76,3 +76,20 @@ export interface Debt {
   color: string;
   createdAt: string;
 }
+
+export interface Budget {
+  id: string;
+  categoryId: string;
+  amount: number;
+  month: number;
+  year: number;
+}
+
+export interface Notification {
+  id: string;
+  type: 'info' | 'warning' | 'success' | 'error';
+  title: string;
+  message: string;
+  dismissed: boolean;
+  createdAt: string;
+}

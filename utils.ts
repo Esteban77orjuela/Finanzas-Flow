@@ -1,4 +1,4 @@
-import { Transaction, TransactionType, RecurrenceRule } from './types';
+import { Transaction, TransactionType, RecurrenceRule, Category } from './types';
 
 export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('es-MX', {
@@ -177,4 +177,87 @@ export const generateMissingRecurringTransactions = (
   });
 
   return newTransactions;
+};
+
+export const exportTransactionsToCSV = (
+  transactions: Transaction[],
+  categories: Category[]
+): void => {
+  const headers = ['Fecha', 'Tipo', 'Categoría', 'Monto', 'Nota', 'Recurrente'];
+  const rows = transactions.map(t => {
+    const cat = categories.find(c => c.id === t.categoryId);
+    return [
+      t.date,
+      t.type === 'INCOME' ? 'Ingreso' : 'Gasto',
+      cat?.name || 'Sin categoría',
+      t.amount.toFixed(2),
+      t.note || '',
+      t.isRecurring ? 'Sí' : 'No',
+    ];
+  });
+
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+  ].join('\n');
+
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `finanzaflow_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+export const generatePDF = (elementId: string, filename: string) => {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>${filename}</title>
+        <style>
+          body { font-family: 'Inter', sans-serif; padding: 20px; color: #1e293b; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          th { text-align: left; padding: 8px 12px; background: #f1f5f9; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+          td { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+          .income { color: #059669; font-weight: 600; }
+          .expense { color: #dc2626; font-weight: 600; }
+          h1 { font-size: 24px; margin-bottom: 4px; }
+          .subtitle { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>${el.innerHTML}</body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 500);
+};
+
+export const calculateAutoSave = (
+  currentAmount: number,
+  targetAmount: number,
+  targetDate: string
+): { weekly: number; monthly: number; totalMonths: number } => {
+  const remaining = Math.max(targetAmount - currentAmount, 0);
+  if (remaining <= 0) return { weekly: 0, monthly: 0, totalMonths: 0 };
+
+  const now = new Date();
+  const target = new Date(targetDate + '-01');
+  target.setMonth(target.getMonth() + 1);
+  target.setDate(0);
+
+  const totalMonths = Math.max(
+    (target.getFullYear() - now.getFullYear()) * 12 + target.getMonth() - now.getMonth(),
+    1
+  );
+  const monthly = remaining / totalMonths;
+  const weekly = remaining / (totalMonths * 4.33);
+
+  return { weekly: roundToTwo(weekly), monthly: roundToTwo(monthly), totalMonths };
 };

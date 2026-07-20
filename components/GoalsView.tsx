@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Goal, Transaction } from '../types';
-import { formatCurrency, formatCurrencyCompact } from '../utils';
-import { Target, Plus, Edit2, Trash2, ChevronRight, PiggyBank, TrendingUp, Calendar, Trophy } from 'lucide-react';
+import { formatCurrency, formatCurrencyCompact, calculateAutoSave } from '../utils';
+import { Target, Plus, Edit2, Trash2, ChevronRight, PiggyBank, TrendingUp, Calendar, Trophy, Clock } from 'lucide-react';
 
 interface GoalsViewProps {
   goals: Goal[];
@@ -89,25 +89,18 @@ const GoalsView: React.FC<GoalsViewProps> = ({ goals, transactions, onAdd, onEdi
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {goalsWithCalculatedAmounts.map((goal) => {
+          {goalsWithCalculatedAmounts.map(goal => {
             const progress = goal.targetAmount > 0 ? Math.min((goal.calculatedCurrentAmount / goal.targetAmount) * 100, 100) : 0;
             const remaining = Math.max(goal.targetAmount - goal.calculatedCurrentAmount, 0);
             const targetDate = new Date(goal.targetDate + '-01');
             const targetLabel = targetDate.toLocaleString('es-MX', { month: 'long', year: 'numeric' });
-
-            const getProgressColor = () => {
-              if (progress >= 100) return 'bg-emerald-500';
-              if (progress >= 60) return 'bg-emerald-400';
-              if (progress >= 30) return 'bg-amber-400';
-              return 'bg-rose-400';
-            };
+            const autoSave = remaining > 0 ? calculateAutoSave(goal.calculatedCurrentAmount, goal.targetAmount, goal.targetDate) : null;
 
             return (
               <div
                 key={goal.id}
                 className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all overflow-hidden group"
               >
-                {/* Color top bar */}
                 <div className="h-2" style={{ backgroundColor: goal.color }} />
 
                 <div className="p-5 space-y-4">
@@ -195,6 +188,14 @@ const GoalsView: React.FC<GoalsViewProps> = ({ goals, transactions, onAdd, onEdi
                         <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
                           <TrendingUp size={14} />
                           ¡Meta cumplida!
+                        </div>
+                      )}
+                      {autoSave && (
+                        <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                            <Clock size={12} />
+                            <span>Ahorro sugerido: <strong className="text-slate-700 dark:text-slate-300">{formatCurrencyCompact(autoSave.monthly)}/mes</strong> o <strong className="text-slate-700 dark:text-slate-300">{formatCurrencyCompact(autoSave.weekly)}/sem</strong></span>
+                          </div>
                         </div>
                       )}
                     </div>

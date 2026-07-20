@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, TransactionType, Category, Goal, Account } from '../types';
-import { calculateTotals, formatCurrency, formatCurrencyCompact } from '../utils';
+import { calculateTotals, formatCurrency, formatCurrencyCompact, roundToTwo } from '../utils';
 import {
   ArrowUpCircle,
   ArrowDownCircle,
@@ -334,6 +334,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onViewGoals,
 }) => {
   const { income, expense } = useMemo(() => calculateTotals(transactions), [transactions]);
+  const monthNet = useMemo(() => roundToTwo(income - expense), [income, expense]);
   const realBalance = useMemo(() => accounts.reduce((sum, acc) => sum + acc.balance, 0), [accounts]);
 
   const [fixedSort, setFixedSort] = useState<SortMode>('ALPHA');
@@ -372,10 +373,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
         <div className="bg-white dark:bg-slate-800 p-5 sm:p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-center items-center sm:items-start text-center sm:text-left">
           <span className="text-slate-500 dark:text-slate-400 font-bold text-xs sm:text-sm uppercase tracking-wider mb-2 block">
-            Balance Total
+            Neto del Mes
           </span>
-          <span className={`text-2xl sm:text-3xl md:text-4xl font-bold truncate block ${realBalance >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-500'}`} title={formatCurrency(realBalance)}>
-            {formatCurrency(realBalance)}
+          <span className={`text-2xl sm:text-3xl md:text-4xl font-bold truncate block ${monthNet >= 0 ? 'text-slate-900 dark:text-white' : 'text-rose-500'}`} title={formatCurrency(monthNet)}>
+            {formatCurrency(monthNet)}
+          </span>
+          <span className="text-[10px] text-slate-400 mt-1" title={formatCurrency(realBalance)}>
+            Balance total: {formatCurrency(realBalance)}
           </span>
         </div>
 

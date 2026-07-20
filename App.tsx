@@ -22,6 +22,8 @@ import {
   Frequency,
   Goal,
   Debt,
+  Budget,
+  Notification,
 } from './types';
 import {
   generateId,
@@ -29,12 +31,14 @@ import {
   generateMissingRecurringTransactions,
   roundToTwo,
   getCategoryEmojiFromGroq,
+  exportTransactionsToCSV,
+  calculateAutoSave,
+  formatCurrency,
 } from './utils';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
 import CategorySettings from './components/CategorySettings';
-import PlanningDocs from './components/PlanningDocs';
 import FloatingCalculator from './components/FloatingCalculator';
 import { DashboardSkeleton } from './components/Skeleton';
 import AuthPage from './components/AuthPage';
@@ -44,6 +48,12 @@ import GoalsView from './components/GoalsView';
 import DebtsView from './components/DebtsView';
 import GoalFormModal from './components/GoalFormModal';
 import DebtFormModal from './components/DebtFormModal';
+import ExportButton from './components/ExportButton';
+import BudgetPanel from './components/BudgetPanel';
+import EvolutionChart from './components/EvolutionChart';
+import NetWorthChart from './components/NetWorthChart';
+import AdvancedFilters, { defaultFilters, type FilterState } from './components/AdvancedFilters';
+import NotificationBanner from './components/NotificationBanner';
 import {
   LayoutDashboard,
   List,
@@ -54,14 +64,12 @@ import {
   Sun,
   ChevronLeft,
   ChevronRight,
-  FileText,
   LogOut,
   AlertCircle,
   CreditCard,
-  Menu,
-  X,
   Trophy,
   TrendingDown,
+  Download,
 } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
 import CategoryFormModal from './components/CategoryFormModal';
@@ -84,6 +92,8 @@ const STORAGE_KEYS = {
   DATE_FILTER: 'finanzaFlow_dateFilter',
   GOALS: 'finanzaFlow_goals',
   DEBTS: 'finanzaFlow_debts',
+  BUDGETS: 'finanzaFlow_budgets',
+  NOTIFICATIONS: 'finanzaFlow_notifications',
 } as const;
 
 type RecurrenceException = { ruleId: string; date: string };
@@ -120,7 +130,7 @@ const getInitialDateFilter = (): DateFilter => {
 };
 
 const getInitialView = (): ViewState => {
-  const validViews: ViewState[] = ['DASHBOARD', 'TRANSACTIONS', 'PLANNING', 'SETTINGS', 'GOALS', 'DEBTS'];
+  const validViews: ViewState[] = ['DASHBOARD', 'TRANSACTIONS', 'SETTINGS', 'GOALS', 'DEBTS'];
   const stored = readStorage<ViewState>(STORAGE_KEYS.VIEW);
   if (stored && validViews.includes(stored)) {
     return stored;
@@ -221,8 +231,16 @@ const App: React.FC = () => {
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isSyncingEmojis, setIsSyncingEmojis] = useState(false);
+
+  // Budgets State
+  const [budgets, setBudgets] = useState<Budget[]>(() => readStorage<Budget[]>(STORAGE_KEYS.BUDGETS) || []);
+
+  // Notifications State
+  const [notifications, setNotifications] = useState<Notification[]>(() => readStorage<Notification[]>(STORAGE_KEYS.NOTIFICATIONS) || []);
+
+  // Advanced Filters
+  const [advancedFilters, setAdvancedFilters] = useState<FilterState>(defaultFilters);
 
   // --- INITIAL DATA FETCH & MIGRATION (Firestore) ---
   useEffect(() => {
@@ -233,7 +251,7 @@ const App: React.FC = () => {
         console.warn('[FinanzaFlow] Sincronizando con Firestore...');
 
         // Parallel Fetch from Firestore
-        const [catSnap, rulesSnap, transSnap, accSnap, goalsSnap, debtsSnap, exceptionsSnap] = await Promise.all([
+        const [catSnap, rulesSnap, transSnap, accSnap, goalsSnap, debtsSnap, exceptionsSnap, budgetSnap] = await Promise.all([
           getDocs(query(collection(db, 'categories'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'recurrence_rules'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'transactions'), where('user_id', '==', session.uid))),
@@ -241,6 +259,7 @@ const App: React.FC = () => {
           getDocs(query(collection(db, 'goals'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'debts'), where('user_id', '==', session.uid))),
           getDocs(query(collection(db, 'recurrence_exceptions'), where('user_id', '==', session.uid))),
+          getDocs(query(collection(db, 'budgets'), where('user_id', '==', session.uid))),
         ]);
 
         const mappedCategories: Category[] = catSnap.docs.map(d => {
@@ -296,6 +315,11 @@ const App: React.FC = () => {
           return { id: d.id, name: data.name, totalAmount: data.totalAmount, paidAmount: data.paidAmount, dueDate: data.dueDate, notes: data.notes, color: data.color, createdAt: data.createdAt };
         });
 
+        const mappedBudgets: Budget[] = budgetSnap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, categoryId: data.categoryId, amount: data.amount, month: data.month, year: data.year };
+        });
+
         // Load recurrence exceptions from Firestore
         const mappedExceptions: RecurrenceException[] = exceptionsSnap.docs.map(d => {
           const data = d.data();
@@ -328,6 +352,7 @@ const App: React.FC = () => {
         let finalTrans = mappedTransactions;
         let finalGoals = mappedGoals;
         let finalDebts = mappedDebts;
+        let finalBudgets = mappedBudgets;
 
         // Migrar locales a Firestore si está vacío
         if (mappedCategories.length === 0 && localCats.length > 0) {
@@ -397,12 +422,23 @@ const App: React.FC = () => {
           finalDebts = localDebts;
         }
 
+        if (mappedBudgets.length === 0) {
+          const localBudgets = readStorage<Budget[]>(STORAGE_KEYS.BUDGETS) || [];
+          if (localBudgets.length > 0) {
+            for (const b of localBudgets) {
+              await setDoc(doc(db, 'budgets', b.id), { ...b, user_id: session.uid });
+            }
+            finalBudgets = localBudgets;
+          }
+        }
+
         setCategories(finalCats);
         setAccounts(finalAccs);
         setRecurrenceRules(finalRules);
         setTransactions(finalTrans);
         setGoals(finalGoals);
         setDebts(finalDebts);
+        setBudgets(finalBudgets);
         setRecurrenceExceptions(mergedExceptions);
       } catch (err: any) {
         console.error('Error inicializando Firestore:', err);
@@ -412,6 +448,7 @@ const App: React.FC = () => {
         setAccounts(readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS);
         setGoals(readStorage<Goal[]>(STORAGE_KEYS.GOALS) || []);
         setDebts(readStorage<Debt[]>(STORAGE_KEYS.DEBTS) || []);
+        setBudgets(readStorage<Budget[]>(STORAGE_KEYS.BUDGETS) || []);
       } finally {
         setIsLoading(false);
       }
@@ -452,6 +489,14 @@ const App: React.FC = () => {
   useEffect(() => {
     writeStorage(STORAGE_KEYS.DEBTS, debts);
   }, [debts]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.BUDGETS, budgets);
+  }, [budgets]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.NOTIFICATIONS, notifications);
+  }, [notifications]);
 
   useEffect(() => {
     if (!isBrowser) return;
@@ -820,6 +865,75 @@ const App: React.FC = () => {
     if (session) deleteDoc(doc(db, 'debts', id));
   };
 
+  // --- BUDGET HANDLERS ---
+  const handleSaveBudget = async (budget: Budget) => {
+    setBudgets(prev => {
+      const exists = prev.find(b => b.id === budget.id);
+      if (exists) return prev.map(b => b.id === budget.id ? budget : b);
+      return [...prev, budget];
+    });
+    if (session) await setDoc(doc(db, 'budgets', budget.id), { ...budget, user_id: session.uid }).catch(() => {});
+  };
+
+  const handleDeleteBudget = (id: string) => {
+    setBudgets(prev => prev.filter(b => b.id !== id));
+    if (session) deleteDoc(doc(db, 'budgets', id)).catch(() => {});
+  };
+
+  // --- NOTIFICATION HANDLERS ---
+  const addNotification = (type: Notification['type'], title: string, message: string) => {
+    const n: Notification = { id: generateId(), type, title, message, dismissed: false, createdAt: new Date().toISOString() };
+    setNotifications(prev => [n, ...prev].slice(0, 20));
+  };
+
+  const dismissNotification = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, dismissed: true } : n));
+  };
+
+  // Check for due dates, budget overruns, etc.
+  useEffect(() => {
+    if (!session || debts.length === 0) return;
+    const today = new Date();
+    debts.forEach(d => {
+      if (!d.dueDate) return;
+      const due = new Date(d.dueDate + 'T00:00:00');
+      const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const progress = d.totalAmount > 0 ? (d.paidAmount / d.totalAmount) : 0;
+      const isPaid = progress >= 1;
+
+      if (diffDays === 7 && !isPaid) {
+        addNotification('warning', 'Deuda próxima a vencer', `${d.name} vence en 7 días (${formatCurrency(d.totalAmount - d.paidAmount)} restantes)`);
+      }
+      if (diffDays === 3 && !isPaid) {
+        addNotification('warning', 'Deuda por vencer', `${d.name} vence en 3 días. ¡No olvides pagar!`);
+      }
+      if (diffDays === 0 && !isPaid) {
+        addNotification('error', 'Deuda vencida hoy', `${d.name} vence hoy.`);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, debts]);
+
+  // --- ADVANCED FILTERING ---
+  const applyAdvancedFilters = (txs: Transaction[]): Transaction[] => {
+    const f = advancedFilters;
+    return txs.filter(t => {
+      if (f.search && !t.note?.toLowerCase().includes(f.search.toLowerCase())) return false;
+      if (f.type !== 'ALL' && t.type !== f.type) return false;
+      if (f.categoryId && t.categoryId !== f.categoryId) return false;
+      if (f.dateFrom && t.date < f.dateFrom) return false;
+      if (f.dateTo && t.date > f.dateTo) return false;
+      if (f.minAmount && t.amount < parseFloat(f.minAmount)) return false;
+      if (f.maxAmount && t.amount > parseFloat(f.maxAmount)) return false;
+      return true;
+    });
+  };
+
+  const filteredTransactionsWithAdvanced = useMemo(
+    () => applyAdvancedFilters(filterTransactions(transactions, dateFilter.month, dateFilter.year)),
+    [transactions, dateFilter, advancedFilters]
+  );
+
   // --- AI EXECUTE ---
   const handleAIExecute = async (actions: AIAction[]) => {
     for (const action of actions) {
@@ -978,23 +1092,15 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200 flex">
-      {/* Mobile Overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
-
       {/* Sidebar */}
-      <aside className={`fixed lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white dark:bg-[#0f172a] border-r border-slate-200 dark:border-[#1e293b] flex flex-col transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className="hidden lg:flex lg:sticky top-0 left-0 z-50 h-screen w-64 bg-white dark:bg-[#0f172a] border-r border-slate-200 dark:border-[#1e293b] flex-col">
         {/* Sidebar Header */}
         <div className="p-5 border-b border-slate-100 dark:border-[#1e293b]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-emerald-500 rounded-xl flex items-center justify-center text-white font-bold text-base shadow-lg">FF</div>
-              <div>
-                <span className="font-bold text-lg tracking-tight block text-slate-800 dark:text-white">FinanzaFlow</span>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-emerald-500 rounded-xl flex items-center justify-center text-white font-bold text-base shadow-lg">FF</div>
+            <div>
+              <span className="font-bold text-lg tracking-tight block text-slate-800 dark:text-white">FinanzaFlow</span>
             </div>
-            <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 lg:hidden"><X size={18} /></button>
           </div>
         </div>
 
@@ -1003,26 +1109,20 @@ const App: React.FC = () => {
           {[
             { id: 'DASHBOARD' as ViewState, label: 'Inicio', icon: LayoutDashboard },
             { id: 'TRANSACTIONS' as ViewState, label: 'Movimientos', icon: List },
-            { id: 'ASISTENTE' as ViewState, label: 'Asistente', icon: Sparkles },
             { id: 'GOALS' as ViewState, label: 'Metas', icon: Trophy },
             { id: 'DEBTS' as ViewState, label: 'Deudas', icon: TrendingDown },
-            { id: 'PLANNING' as ViewState, label: 'Planificación', icon: FileText },
             { id: 'SETTINGS' as ViewState, label: 'Perfil', icon: Settings },
           ].map((item) => (
             <button
               key={item.label}
-              onClick={() => { 
-                if (item.label === 'Asistente') setIsAIModalOpen(true); 
-                else setView(item.id); 
-                setSidebarOpen(false); 
-              }}
+              onClick={() => setView(item.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                (view === item.id && item.label !== 'Asistente')
+                view === item.id
                   ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
                   : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <item.icon size={20} className={(view === item.id && item.label !== 'Asistente') ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'} />
+              <item.icon size={20} className={view === item.id ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'} />
               <span>{item.label}</span>
             </button>
           ))}
@@ -1043,15 +1143,6 @@ const App: React.FC = () => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen min-w-0 bg-slate-50 dark:bg-slate-950">
         
-        {/* Mobile Header (Only for hamburger menu) */}
-        <div className="lg:hidden flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Menú">
-            <Menu size={22} />
-          </button>
-          <span className="font-bold text-sm text-slate-800 dark:text-white">FinanzaFlow</span>
-          <div className="w-8"></div> {/* Spacer for centering */}
-        </div>
-
         {/* Main Content Area */}
         <main className="flex-1 px-4 sm:px-8 pt-6 sm:pt-8 pb-28 max-w-6xl w-full mx-auto">
           
@@ -1062,8 +1153,7 @@ const App: React.FC = () => {
                 {view === 'DASHBOARD' ? 'Resumen' : 
                  view === 'TRANSACTIONS' ? 'Movimientos' : 
                  view === 'GOALS' ? 'Metas de Ahorro' : 
-                 view === 'DEBTS' ? 'Deudas' : 
-                 view === 'PLANNING' ? 'Planificación' : 'Ajustes'}
+                 view === 'DEBTS' ? 'Deudas' : 'Ajustes'}
               </h1>
               <p className="text-sm text-slate-500 mt-1">
                 {view === 'DASHBOARD' ? 'Tu panorama financiero' : 'Gestiona tus finanzas paso a paso'}
@@ -1084,18 +1174,25 @@ const App: React.FC = () => {
           </div>
 
           {view === 'DASHBOARD' && (
-            <>
+            <div className="space-y-6">
               <Dashboard transactions={filteredTransactions} categories={categories} accounts={accounts} onEdit={handleEditClick} onDelete={handleDeleteTransaction} goals={goals} onViewGoals={() => setView('GOALS')} />
-            </>
+              <EvolutionChart transactions={transactions} accounts={accounts} />
+              <NetWorthChart transactions={transactions} accounts={accounts} />
+              <BudgetPanel transactions={filteredTransactions} categories={categories} budgets={budgets} onSaveBudget={handleSaveBudget} onDeleteBudget={handleDeleteBudget} />
+            </div>
           )}
 
           {view === 'TRANSACTIONS' && (
-            <div className="animate-fade-in">
-              <div className="flex justify-between items-center mb-6">
+            <div className="animate-fade-in space-y-4">
+              <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold">Movimientos</h2>
-                <span className="text-sm text-slate-500">{filteredTransactions.length} registros</span>
+                <div className="flex items-center gap-2">
+                  <ExportButton transactions={filteredTransactionsWithAdvanced} categories={categories} />
+                  <span className="text-sm text-slate-500">{filteredTransactionsWithAdvanced.length} registros</span>
+                </div>
               </div>
-              <TransactionList transactions={filteredTransactions} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
+              <AdvancedFilters categories={categories} filters={advancedFilters} onChange={setAdvancedFilters} />
+              <TransactionList transactions={filteredTransactionsWithAdvanced} categories={categories} onEdit={handleEditClick} onDelete={handleDeleteTransaction} />
             </div>
           )}
 
@@ -1120,66 +1217,39 @@ const App: React.FC = () => {
           )}
 
           {view === 'SETTINGS' && (
-            <div className="animate-fade-in pb-20 space-y-4">
-              <div className="bg-gradient-to-br from-primary-600 to-indigo-700 p-4 rounded-xl shadow-lg text-white mb-2">
+            <div className="animate-fade-in pb-20 space-y-6">
+              <div className="bg-gradient-to-br from-primary-600 to-indigo-700 p-5 sm:p-6 rounded-2xl shadow-lg text-white">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-xl font-bold">{session?.email?.[0].toUpperCase() || 'U'}</div>
+                  <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-2xl font-bold">{session?.email?.[0].toUpperCase() || 'U'}</div>
                   <div className="min-w-0">
                     <p className="text-[10px] uppercase tracking-widest opacity-70 font-bold">Perfil Activo</p>
-                    <p className="text-sm font-bold truncate">{session?.email}</p>
-                    <p className="text-[10px] opacity-80 mt-0.5">Sincronizado con Google Firebase ✅</p>
+                    <p className="text-base font-bold truncate">{session?.email}</p>
+                    <p className="text-xs opacity-80 mt-1">Sincronizado con Google Firebase ✅</p>
                   </div>
                 </div>
               </div>
-              <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-violet-50 dark:bg-violet-900/30 rounded-lg text-violet-600 dark:text-violet-400"><Sparkles size={20} /></div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Groq AI</h3>
-                    <p className="text-xs text-slate-500">Clave API configurada en variables de entorno</p>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${import.meta.env.VITE_GROQ_API_KEY ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>{import.meta.env.VITE_GROQ_API_KEY ? 'Configurada' : 'Faltante'}</span>
-                </div>
-                {import.meta.env.VITE_GROQ_API_KEY && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-                    <button 
-                      onClick={handleSyncEmojis}
-                      disabled={isSyncingEmojis}
-                      className="w-full py-2.5 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 text-xs font-bold rounded-lg hover:bg-violet-200 dark:hover:bg-violet-900/50 transition-colors flex items-center justify-center gap-2"
-                    >
-                      {isSyncingEmojis ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
-                          Analizando categorías antiguas...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles size={14} />
-                          Actualizar Emojis Antiguos con IA
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600 dark:text-indigo-400"><FileText size={20} /></div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Documentación</h3>
-                    <p className="text-xs text-slate-500">Guía y planificación</p>
-                  </div>
-                </div>
-                <button onClick={() => setView('PLANNING')} className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-lg transition-colors">Abrir</button>
-              </div>
-              <CategorySettings categories={categories} onAdd={handleAddCategory} onUpdate={handleUpdateCategory} onDelete={handleDeleteCategory} onOpenAddModal={() => setIsCategoryModalOpen(true)} />
-            </div>
-          )}
 
-          {view === 'PLANNING' && (
-            <div className="animate-fade-in">
-              <button onClick={() => setView('SETTINGS')} className="flex items-center gap-2 text-primary-600 dark:text-primary-400 font-bold text-sm mb-6 hover:underline"><ChevronLeft size={16} /> Volver a Ajustes</button>
-              <PlanningDocs />
+              {/* Export Section */}
+              <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 space-y-4">
+                <h3 className="font-bold text-sm text-slate-800 dark:text-white uppercase tracking-wider">Exportar Datos</h3>
+                <p className="text-xs text-slate-500">Descarga tus movimientos para llevar a Excel o contabilidad.</p>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => exportTransactionsToCSV(filteredTransactions, categories)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl transition-all shadow-sm"
+                  >
+                    <Download size={16} />
+                    Exportar mes actual (CSV)
+                  </button>
+                  <button
+                    onClick={() => exportTransactionsToCSV(transactions, categories)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 font-bold text-sm rounded-xl transition-all border border-slate-200 dark:border-slate-600"
+                  >
+                    <Download size={16} />
+                    Exportar todo (CSV)
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </main>
@@ -1195,6 +1265,9 @@ const App: React.FC = () => {
           </div>
         </nav>
       </div>
+
+      {/* Notifications */}
+      <NotificationBanner notifications={notifications} onDismiss={dismissNotification} />
 
       {/* Modals */}
       <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={accounts} goals={goals} debts={debts} initialData={editingTransaction} defaultType={defaultFormType} />

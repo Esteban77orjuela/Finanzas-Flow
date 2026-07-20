@@ -60,6 +60,22 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
+    // ---- BUDGETS ----
+    match /budgets/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner() && request.resource.data.user_id == resource.data.user_id;
+      allow delete: if isOwner();
+    }
+
+    // ---- RECURRENCE EXCEPTIONS ----
+    match /recurrence_exceptions/{docId} {
+      allow read: if isOwner();
+      allow create: if canWrite();
+      allow update: if isOwner();
+      allow delete: if isOwner();
+    }
+
     // Deny everything else
     match /{document=**} {
       allow read, write: if false;
