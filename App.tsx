@@ -3,7 +3,7 @@ import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   collection, 
   doc, 
-  getDocs, 
+  onSnapshot,
   setDoc, 
   deleteDoc, 
   updateDoc, 
@@ -224,9 +224,9 @@ const App: React.FC = () => {
   const [recurringDeleteTarget, setRecurringDeleteTarget] = useState<Transaction | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilter>(getInitialDateFilter);
 
-  // Goals & Debts State
-  const [goals, setGoals] = useState<Goal[]>(() => readStorage<Goal[]>(STORAGE_KEYS.GOALS) || []);
-  const [debts, setDebts] = useState<Debt[]>(() => readStorage<Debt[]>(STORAGE_KEYS.DEBTS) || []);
+  // Goals & Debts State (Firestore es la única fuente de verdad; sin seed local)
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isDebtModalOpen, setIsDebtModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
@@ -234,227 +234,167 @@ const App: React.FC = () => {
   const [isSyncingEmojis, setIsSyncingEmojis] = useState(false);
 
   // Budgets State
-  const [budgets, setBudgets] = useState<Budget[]>(() => readStorage<Budget[]>(STORAGE_KEYS.BUDGETS) || []);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
 
   // Notifications State
-  const [notifications, setNotifications] = useState<Notification[]>(() => readStorage<Notification[]>(STORAGE_KEYS.NOTIFICATIONS) || []);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   // Advanced Filters
   const [advancedFilters, setAdvancedFilters] = useState<FilterState>(defaultFilters);
 
-  // --- INITIAL DATA FETCH & MIGRATION (Firestore) ---
+  // --- REAL-TIME SYNC (Firestore onSnapshot) ---
+  // Firestore es la ÚNICA fuente de verdad. Sin migración local ni fallback a localStorage:
+  // lo que se elimina en un dispositivo desaparece en todos, al instante.
   useEffect(() => {
     if (!session) return;
-    const initData = async () => {
-      setIsLoading(true);
-      try {
-        console.warn('[FinanzaFlow] Sincronizando con Firestore...');
+    setIsLoading(true);
+    setInitError(null);
 
-        // Parallel Fetch from Firestore
-        const [catSnap, rulesSnap, transSnap, accSnap, goalsSnap, debtsSnap, exceptionsSnap, budgetSnap] = await Promise.all([
-          getDocs(query(collection(db, 'categories'), where('user_id', '==', session.uid))),
-          getDocs(query(collection(db, 'recurrence_rules'), where('user_id', '==', session.uid))),
-          getDocs(query(collection(db, 'transactions'), where('user_id', '==', session.uid))),
-          getDocs(query(collection(db, 'accounts'), where('user_id', '==', session.uid))),
-          getDocs(query(collection(db, 'goals'), where('user_id', '==', session.uid))),
-          getDocs(query(collection(db, 'debts'), where('user_id', '==', session.uid))),
-          getDocs(query(collection(db, 'recurrence_exceptions'), where('user_id', '==', session.uid))),
-          getDocs(query(collection(db, 'budgets'), where('user_id', '==', session.uid))),
-        ]);
-
-        const mappedCategories: Category[] = catSnap.docs.map(d => {
-          const data = d.data();
-          return { id: d.id, name: data.name, type: data.type, color: data.color, icon: data.icon };
-        });
-
-        const mappedRules: RecurrenceRule[] = rulesSnap.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            frequency: data.frequency,
-            startDate: data.start_date,
-            endDate: data.end_date,
-            amount: data.amount,
-            type: data.type,
-            categoryId: data.category_id,
-            accountId: data.account_id,
-            note: data.note,
-            baseDateDay: data.base_date_day,
-          };
-        });
-
-        const mappedTransactions: Transaction[] = transSnap.docs.map(d => {
-          const data = d.data();
-          return {
-            id: d.id,
-            amount: data.amount,
-            type: data.type,
-            date: data.date,
-            categoryId: data.category_id,
-            accountId: data.account_id,
-            note: data.note,
-            isRecurring: data.is_recurring,
-            recurrenceRuleId: data.recurrence_rule_id,
-            linkedGoalId: data.linked_goal_id,
-            linkedDebtId: data.linked_debt_id,
-          };
-        });
-
-        const mappedAccounts: Account[] = accSnap.docs.map(d => {
-          const data = d.data();
-          return { id: d.id, name: data.name, type: data.type, balance: data.balance };
-        });
-
-        const mappedGoals: Goal[] = goalsSnap.docs.map(d => {
-          const data = d.data();
-          return { id: d.id, name: data.name, targetAmount: data.targetAmount, currentAmount: data.currentAmount, targetDate: data.targetDate, color: data.color, icon: data.icon, createdAt: data.createdAt };
-        });
-
-        const mappedDebts: Debt[] = debtsSnap.docs.map(d => {
-          const data = d.data();
-          return { id: d.id, name: data.name, totalAmount: data.totalAmount, paidAmount: data.paidAmount, dueDate: data.dueDate, notes: data.notes, color: data.color, createdAt: data.createdAt };
-        });
-
-        const mappedBudgets: Budget[] = budgetSnap.docs.map(d => {
-          const data = d.data();
-          return { id: d.id, categoryId: data.categoryId, amount: data.amount, month: data.month, year: data.year };
-        });
-
-        // Load recurrence exceptions from Firestore
-        const mappedExceptions: RecurrenceException[] = exceptionsSnap.docs.map(d => {
-          const data = d.data();
-          return { ruleId: data.ruleId, date: data.date };
-        });
-        // Merge with any local ones not yet synced
-        const localExceptions = readStorage<RecurrenceException[]>(STORAGE_KEYS.RECURRENCE_EXCEPTIONS) || [];
-        const mergedExceptions = [...mappedExceptions];
-        for (const le of localExceptions) {
-          const alreadyInFirestore = mappedExceptions.some(e => e.ruleId === le.ruleId && e.date === le.date);
-          if (!alreadyInFirestore) {
-            mergedExceptions.push(le);
-            // Sync missing local exception to Firestore
-            const exId = `${le.ruleId}_${le.date}`;
-            await setDoc(doc(db, 'recurrence_exceptions', exId), { ...le, user_id: session.uid }).catch(() => {});
-          }
-        }
-
-        // --- LOCAL MIGRATION LOGIC (If Firestore is empty) ---
-        const localTrans = readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || [];
-        const localCats = readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || [];
-        const localRules = readStorage<RecurrenceRule[]>(STORAGE_KEYS.RULES) || [];
-        const localAccs = readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS;
-        const localGoals = readStorage<Goal[]>(STORAGE_KEYS.GOALS) || [];
-        const localDebts = readStorage<Debt[]>(STORAGE_KEYS.DEBTS) || [];
-
-        let finalCats = mappedCategories;
-        let finalAccs = mappedAccounts;
-        let finalRules = mappedRules;
-        let finalTrans = mappedTransactions;
-        let finalGoals = mappedGoals;
-        let finalDebts = mappedDebts;
-        let finalBudgets = mappedBudgets;
-
-        // Migrar locales a Firestore si está vacío
-        if (mappedCategories.length === 0 && localCats.length > 0) {
-          console.warn('[FinanzaFlow] Migrando categorías locales a Firebase...');
-          for (const c of localCats) {
-            await setDoc(doc(db, 'categories', c.id), { ...c, user_id: session.uid });
-          }
-          finalCats = localCats;
-        }
-
-        if (mappedAccounts.length === 0) {
-          console.warn('[FinanzaFlow] Migrando cuentas locales a Firebase...');
-          for (const a of localAccs) {
-            await setDoc(doc(db, 'accounts', a.id), { ...a, user_id: session.uid });
-          }
-          finalAccs = localAccs;
-        }
-
-        if (mappedRules.length === 0 && localRules.length > 0) {
-          console.warn('[FinanzaFlow] Migrando reglas locales a Firebase...');
-          for (const r of localRules) {
-            await setDoc(doc(db, 'recurrence_rules', r.id), {
-              frequency: r.frequency,
-              start_date: r.startDate,
-              end_date: r.endDate ?? null,
-              amount: r.amount,
-              type: r.type,
-              category_id: r.categoryId,
-              account_id: r.accountId,
-              note: r.note,
-              base_date_day: r.baseDateDay,
-              user_id: session.uid
-            });
-          }
-          finalRules = localRules;
-        }
-
-        if (mappedTransactions.length === 0 && localTrans.length > 0) {
-          console.warn('[FinanzaFlow] Migrando transacciones locales a Firebase...');
-          for (const t of localTrans) {
-            await setDoc(doc(db, 'transactions', t.id), {
-              amount: t.amount,
-              type: t.type,
-              date: t.date,
-              category_id: t.categoryId,
-              account_id: t.accountId,
-              note: t.note,
-              is_recurring: t.isRecurring,
-              recurrence_rule_id: t.recurrenceRuleId,
-              user_id: session.uid
-            });
-          }
-          finalTrans = localTrans;
-        }
-
-        if (mappedGoals.length === 0 && localGoals.length > 0) {
-          for (const g of localGoals) {
-            await setDoc(doc(db, 'goals', g.id), { ...g, user_id: session.uid });
-          }
-          finalGoals = localGoals;
-        }
-
-        if (mappedDebts.length === 0 && localDebts.length > 0) {
-          for (const d of localDebts) {
-            await setDoc(doc(db, 'debts', d.id), { ...d, user_id: session.uid });
-          }
-          finalDebts = localDebts;
-        }
-
-        if (mappedBudgets.length === 0) {
-          const localBudgets = readStorage<Budget[]>(STORAGE_KEYS.BUDGETS) || [];
-          if (localBudgets.length > 0) {
-            for (const b of localBudgets) {
-              await setDoc(doc(db, 'budgets', b.id), { ...b, user_id: session.uid });
-            }
-            finalBudgets = localBudgets;
-          }
-        }
-
-        setCategories(finalCats);
-        setAccounts(finalAccs);
-        setRecurrenceRules(finalRules);
-        setTransactions(finalTrans);
-        setGoals(finalGoals);
-        setDebts(finalDebts);
-        setBudgets(finalBudgets);
-        setRecurrenceExceptions(mergedExceptions);
-      } catch (err: any) {
-        console.error('Error inicializando Firestore:', err);
-        setInitError(err.message);
-        setTransactions(readStorage<Transaction[]>(STORAGE_KEYS.TRANSACTIONS) || []);
-        setCategories(readStorage<Category[]>(STORAGE_KEYS.CATEGORIES) || []);
-        setAccounts(readStorage<Account[]>(STORAGE_KEYS.ACCOUNTS) || DEFAULT_ACCOUNTS);
-        setGoals(readStorage<Goal[]>(STORAGE_KEYS.GOALS) || []);
-        setDebts(readStorage<Debt[]>(STORAGE_KEYS.DEBTS) || []);
-        setBudgets(readStorage<Budget[]>(STORAGE_KEYS.BUDGETS) || []);
-      } finally {
-        setIsLoading(false);
-      }
+    let pending = 8;
+    const settle = () => {
+      pending -= 1;
+      if (pending <= 0) setIsLoading(false);
+    };
+    const handleError = (label: string, err: unknown) => {
+      console.error(`[FinanzaFlow] Error escuchando "${label}":`, err);
+      setInitError((prev) => prev ?? (err instanceof Error ? err.message : 'Error de sincronización'));
+      settle();
     };
 
-    initData();
+    const uid = session.uid;
+
+    const unsubs = [
+      onSnapshot(
+        query(collection(db, 'categories'), where('user_id', '==', uid)),
+        (snap) => {
+          setCategories(snap.docs.map((d) => {
+            const data = d.data();
+            return { id: d.id, name: data.name, type: data.type, color: data.color, icon: data.icon };
+          }));
+          settle();
+        },
+        (err) => handleError('categories', err)
+      ),
+
+      onSnapshot(
+        query(collection(db, 'recurrence_rules'), where('user_id', '==', uid)),
+        (snap) => {
+          setRecurrenceRules(snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              frequency: data.frequency,
+              startDate: data.start_date,
+              endDate: data.end_date,
+              amount: data.amount,
+              type: data.type,
+              categoryId: data.category_id,
+              accountId: data.account_id,
+              note: data.note,
+              baseDateDay: data.base_date_day,
+            };
+          }));
+          settle();
+        },
+        (err) => handleError('recurrence_rules', err)
+      ),
+
+      onSnapshot(
+        query(collection(db, 'transactions'), where('user_id', '==', uid)),
+        (snap) => {
+          setTransactions(snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              amount: data.amount,
+              type: data.type,
+              date: data.date,
+              categoryId: data.category_id,
+              accountId: data.account_id,
+              note: data.note,
+              isRecurring: data.is_recurring,
+              recurrenceRuleId: data.recurrence_rule_id,
+              linkedGoalId: data.linked_goal_id,
+              linkedDebtId: data.linked_debt_id,
+            };
+          }));
+          settle();
+        },
+        (err) => handleError('transactions', err)
+      ),
+
+      onSnapshot(
+        query(collection(db, 'accounts'), where('user_id', '==', uid)),
+        (snap) => {
+          const mappedAccounts: Account[] = snap.docs.map((d) => {
+            const data = d.data();
+            return { id: d.id, name: data.name, type: data.type, balance: data.balance };
+          });
+          // Seed idempotente para usuarios nuevos: IDs deterministas (a1/a2),
+          // dos dispositivos pueden sembrar a la vez sin duplicar documentos.
+          if (mappedAccounts.length === 0) {
+            setAccounts(DEFAULT_ACCOUNTS);
+            DEFAULT_ACCOUNTS.forEach((a) => {
+              setDoc(doc(db, 'accounts', a.id), { ...a, user_id: uid }).catch(() => {});
+            });
+          } else {
+            setAccounts(mappedAccounts);
+          }
+          settle();
+        },
+        (err) => handleError('accounts', err)
+      ),
+
+      onSnapshot(
+        query(collection(db, 'goals'), where('user_id', '==', uid)),
+        (snap) => {
+          setGoals(snap.docs.map((d) => {
+            const data = d.data();
+            return { id: d.id, name: data.name, targetAmount: data.targetAmount, currentAmount: data.currentAmount, targetDate: data.targetDate, color: data.color, icon: data.icon, createdAt: data.createdAt };
+          }));
+          settle();
+        },
+        (err) => handleError('goals', err)
+      ),
+
+      onSnapshot(
+        query(collection(db, 'debts'), where('user_id', '==', uid)),
+        (snap) => {
+          setDebts(snap.docs.map((d) => {
+            const data = d.data();
+            return { id: d.id, name: data.name, totalAmount: data.totalAmount, paidAmount: data.paidAmount, dueDate: data.dueDate, notes: data.notes, color: data.color, createdAt: data.createdAt };
+          }));
+          settle();
+        },
+        (err) => handleError('debts', err)
+      ),
+
+      onSnapshot(
+        query(collection(db, 'recurrence_exceptions'), where('user_id', '==', uid)),
+        (snap) => {
+          setRecurrenceExceptions(snap.docs.map((d) => {
+            const data = d.data();
+            return { ruleId: data.ruleId, date: data.date };
+          }));
+          settle();
+        },
+        (err) => handleError('recurrence_exceptions', err)
+      ),
+
+      onSnapshot(
+        query(collection(db, 'budgets'), where('user_id', '==', uid)),
+        (snap) => {
+          setBudgets(snap.docs.map((d) => {
+            const data = d.data();
+            return { id: d.id, categoryId: data.categoryId, amount: data.amount, month: data.month, year: data.year };
+          }));
+          settle();
+        },
+        (err) => handleError('budgets', err)
+      ),
+    ];
+
+    return () => unsubs.forEach((u) => u());
   }, [session]);
 
   // --- PERSISTENCE: Save to LocalStorage ---
@@ -561,6 +501,16 @@ const App: React.FC = () => {
     () => filterTransactions(transactions, dateFilter.month, dateFilter.year),
     [transactions, dateFilter]
   );
+
+  // Saldo de cada cuenta DERIVADO de todas las transacciones (verdad del servidor).
+  // Reemplaza el campo `balance` escrito desde arrays locales (fuente de corrupción).
+  const derivedAccounts = useMemo(() => {
+    const balances: Record<string, number> = {};
+    transactions.forEach((t) => {
+      balances[t.accountId] = (balances[t.accountId] || 0) + (t.type === 'INCOME' ? t.amount : -t.amount);
+    });
+    return accounts.map((a) => ({ ...a, balance: roundToTwo(balances[a.id] || 0) }));
+  }, [accounts, transactions]);
 
   const handleEditClick = (t: Transaction) => {
     setEditingTransaction(t);
@@ -727,16 +677,9 @@ const App: React.FC = () => {
         });
       }
 
-      // UPDATE ACCOUNT BALANCE
-      if (transactionsToSync.length > 0) {
-        const accountId = transactionsToSync[0].accountId;
-        const accountTransactions = newTransactions.filter((tx) => tx.accountId === accountId);
-        const newBalance = roundToTwo(
-          accountTransactions.reduce((acc, tx) => tx.type === 'INCOME' ? acc + tx.amount : acc - tx.amount, 0)
-        );
-        await updateDoc(doc(db, 'accounts', accountId), { balance: newBalance, user_id: session.uid });
-        setAccounts((prev) => prev.map((a) => (a.id === accountId ? { ...a, balance: newBalance } : a)));
-      }
+      // NOTA: el saldo de cuentas ya NO se escribe aquí. Se DERIVA de las
+      // transacciones (fuente fresca del servidor) en `derivedAccounts`.
+      // Escribirlo desde arrays locales causaba saldos corruptos entre dispositivos.
 
       // STATE UPDATE (AFTER Firestore succeeds)
       setRecurrenceRules(newRules);
@@ -781,11 +724,6 @@ const App: React.FC = () => {
     setRecurringDeleteTarget(null);
 
     await deleteDoc(doc(db, 'transactions', tx.id));
-
-    const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-    const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
-    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance, user_id: session!.uid });
-    setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
   };
 
   const performDeleteSeries = async (tx: Transaction) => {
@@ -801,11 +739,6 @@ const App: React.FC = () => {
       await deleteDoc(doc(db, 'transactions', t.id));
     }
     await deleteDoc(doc(db, 'recurrence_rules', tx.recurrenceRuleId));
-
-    const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-    const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
-    await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance, user_id: session.uid });
-    setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
   };
 
   const handleDeleteTransaction = (id: string) => {
@@ -826,11 +759,6 @@ const App: React.FC = () => {
         const updatedTransactions = transactions.filter((t) => t.id !== id);
         setTransactions(updatedTransactions);
         await deleteDoc(doc(db, 'transactions', id));
-
-        const accountTransactions = updatedTransactions.filter((t) => t.accountId === tx.accountId);
-        const newBalance = roundToTwo(accountTransactions.reduce((acc, t) => (t.type === 'INCOME' ? acc + t.amount : acc - t.amount), 0));
-        if (session) await updateDoc(doc(db, 'accounts', tx.accountId), { balance: newBalance, user_id: session.uid });
-        setAccounts((prev) => prev.map((a) => (a.id === tx.accountId ? { ...a, balance: newBalance } : a)));
       },
     });
   };
@@ -881,38 +809,49 @@ const App: React.FC = () => {
   };
 
   // --- NOTIFICATION HANDLERS ---
-  const addNotification = (type: Notification['type'], title: string, message: string) => {
-    const n: Notification = { id: generateId(), type, title, message, dismissed: false, createdAt: new Date().toISOString() };
-    setNotifications(prev => [n, ...prev].slice(0, 20));
-  };
-
   const dismissNotification = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, dismissed: true } : n));
   };
 
   // Check for due dates, budget overruns, etc.
+  // Con onSnapshot este efecto corre en cada sincronización: la clave única
+  // (`key`) evita crear notificaciones duplicadas de la misma condición.
   useEffect(() => {
     if (!session || debts.length === 0) return;
     const today = new Date();
+    const nowIso = () => new Date().toISOString();
+    const pending: Notification[] = [];
+
     debts.forEach(d => {
       if (!d.dueDate) return;
+      const linkedPaid = transactions.filter(t => t.linkedDebtId === d.id).reduce((s, t) => s + t.amount, 0);
+      const paid = d.paidAmount + linkedPaid;
       const due = new Date(d.dueDate + 'T00:00:00');
       const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      const progress = d.totalAmount > 0 ? (d.paidAmount / d.totalAmount) : 0;
-      const isPaid = progress >= 1;
+      const isPaid = d.totalAmount > 0 && paid >= d.totalAmount;
+      if (isPaid) return;
 
-      if (diffDays === 7 && !isPaid) {
-        addNotification('warning', 'Deuda próxima a vencer', `${d.name} vence en 7 días (${formatCurrency(d.totalAmount - d.paidAmount)} restantes)`);
+      if (diffDays === 7) {
+        pending.push({ id: generateId(), key: `debt-${d.id}-7`, type: 'warning', title: 'Deuda próxima a vencer', message: `${d.name} vence en 7 días (${formatCurrency(Math.max(d.totalAmount - paid, 0))} restantes)`, dismissed: false, createdAt: nowIso() });
       }
-      if (diffDays === 3 && !isPaid) {
-        addNotification('warning', 'Deuda por vencer', `${d.name} vence en 3 días. ¡No olvides pagar!`);
+      if (diffDays === 3) {
+        pending.push({ id: generateId(), key: `debt-${d.id}-3`, type: 'warning', title: 'Deuda por vencer', message: `${d.name} vence en 3 días. ¡No olvides pagar!`, dismissed: false, createdAt: nowIso() });
       }
-      if (diffDays === 0 && !isPaid) {
-        addNotification('error', 'Deuda vencida hoy', `${d.name} vence hoy.`);
+      if (diffDays === 0) {
+        pending.push({ id: generateId(), key: `debt-${d.id}-0`, type: 'error', title: 'Deuda vencida hoy', message: `${d.name} vence hoy.`, dismissed: false, createdAt: nowIso() });
+      }
+      if (diffDays < 0) {
+        pending.push({ id: generateId(), key: `debt-${d.id}-overdue`, type: 'error', title: 'Deuda vencida', message: `${d.name} venció el ${new Date(d.dueDate + 'T00:00:00').toLocaleDateString('es-MX')}.`, dismissed: false, createdAt: nowIso() });
       }
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, debts]);
+
+    if (pending.length === 0) return;
+    setNotifications(prev => {
+      const seen = new Set(prev.map(n => n.key).filter(Boolean));
+      const fresh = pending.filter(n => n.key && !seen.has(n.key));
+      return fresh.length > 0 ? [...fresh.reverse(), ...prev].slice(0, 20) : prev;
+    });
+  }, [session, debts, transactions]);
 
   // --- ADVANCED FILTERING ---
   const applyAdvancedFilters = (txs: Transaction[]): Transaction[] => {
@@ -1175,9 +1114,9 @@ const App: React.FC = () => {
 
           {view === 'DASHBOARD' && (
             <div className="space-y-6">
-              <Dashboard transactions={filteredTransactions} categories={categories} accounts={accounts} onEdit={handleEditClick} onDelete={handleDeleteTransaction} goals={goals} onViewGoals={() => setView('GOALS')} />
-              <EvolutionChart transactions={transactions} accounts={accounts} />
-              <NetWorthChart transactions={transactions} accounts={accounts} />
+              <Dashboard transactions={filteredTransactions} categories={categories} accounts={derivedAccounts} onEdit={handleEditClick} onDelete={handleDeleteTransaction} goals={goals} onViewGoals={() => setView('GOALS')} />
+              <EvolutionChart transactions={transactions} accounts={derivedAccounts} />
+              <NetWorthChart transactions={transactions} accounts={derivedAccounts} />
               <BudgetPanel transactions={filteredTransactions} categories={categories} budgets={budgets} onSaveBudget={handleSaveBudget} onDeleteBudget={handleDeleteBudget} />
             </div>
           )}
@@ -1270,10 +1209,10 @@ const App: React.FC = () => {
       <NotificationBanner notifications={notifications} onDismiss={dismissNotification} />
 
       {/* Modals */}
-      <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={accounts} goals={goals} debts={debts} initialData={editingTransaction} defaultType={defaultFormType} />
+      <TransactionForm key={isModalOpen ? editingTransaction?.id || 'new' : 'closed'} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTransaction} onAddCategory={handleAddCategory} categories={categories} accounts={derivedAccounts} goals={goals} debts={debts} initialData={editingTransaction} defaultType={defaultFormType} />
       <FloatingCalculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
       <ConfirmationModal isOpen={confirmDialog.isOpen} onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))} onConfirm={confirmDialog.onConfirm} title={confirmDialog.title} message={confirmDialog.message} isDestructive={confirmDialog.isDestructive} />
-      <AIAssistantModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} categories={categories} accounts={accounts} onExecuteContext={handleAIExecute} />
+      <AIAssistantModal isOpen={isAIModalOpen} onClose={() => setIsAIModalOpen(false)} categories={categories} accounts={derivedAccounts} onExecuteContext={handleAIExecute} />
       <RecurringDeleteModal isOpen={!!recurringDeleteTarget} onClose={() => setRecurringDeleteTarget(null)} onDeleteInstance={() => recurringDeleteTarget && performDeleteInstance(recurringDeleteTarget)} onDeleteSeries={() => recurringDeleteTarget && performDeleteSeries(recurringDeleteTarget)} />
       <CategoryFormModal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} onAdd={handleAddCategory} />
       <GoalFormModal isOpen={isGoalModalOpen} onClose={() => setIsGoalModalOpen(false)} onSave={handleSaveGoal} initialData={editingGoal} />

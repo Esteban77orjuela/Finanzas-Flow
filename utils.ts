@@ -162,7 +162,10 @@ export const generateMissingRecurringTransactions = (
 
       if (!exists && !isException) {
         newTransactions.push({
-          id: generateId(),
+          // ID determinista (regla_fecha): si dos dispositivos generan la misma
+          // transacción a la vez, ambas escrituras caen en el mismo documento.
+          // Imposible duplicar o resucitar por carreras entre dispositivos.
+          id: `${rule.id}_${dateStr}`,
           amount: roundToTwo(rule.amount), // Ensuring rounded amount on generation
           type: rule.type,
           categoryId: rule.categoryId,

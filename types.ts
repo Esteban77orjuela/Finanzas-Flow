@@ -87,6 +87,7 @@ export interface Budget {
 
 export interface Notification {
   id: string;
+  key?: string; // Clave de deduplicación (ej. "debt-{id}-{días}")
   type: 'info' | 'warning' | 'success' | 'error';
   title: string;
   message: string;
